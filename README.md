@@ -21,7 +21,17 @@ npm start
 
 Open http://localhost:3000. There are no packages to install.
 
-Your data is saved in `data/db.json` (ignored by git). The browser also keeps a backup copy.
+Your data is saved in `data/db.json` (ignored by git). The browser also keeps a backup copy, and **Export backup** in the sidebar downloads everything as one file you can import later or on another computer.
+
+Run the tests (no API key needed):
+
+```bash
+npm test
+```
+
+### Keep it on your own computer
+
+The server only answers on `localhost` and refuses requests from other websites. It has no login, so do not set `HOST=0.0.0.0` or put it on the internet: anyone who could reach it could read your notes and spend your API credits.
 
 ## Work on it with Claude Code
 

@@ -183,6 +183,7 @@ label.f{display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:60
 <div id="toasts"></div>
 <div id="modalRoot"></div>
 <input type="file" id="filePick" multiple hidden accept=".pdf,.docx,.pptx,.txt,.md,.csv,.xlsx,.xls,.png,.jpg,.jpeg,.webp,.tex">
+<input type="file" id="importPick" hidden accept=".json,application/json">
 <script>
 {
 const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
@@ -205,7 +206,10 @@ const ui={tab:{},run:null,builder:{},asg:{},chat:{},openMat:null,busy:{}};
 let MODE='local';
 const LS='studyhub.v1';
 const timeout=(p,ms)=>Promise.race([p,new Promise((_,r)=>setTimeout(()=>r({code:'timeout'}),ms))]);
-function lsSave(){try{const c={...S};for(const k of Object.values(KIND))c[k]=S[k].filter(e=>!e.demo);localStorage.setItem(LS,JSON.stringify(c))}catch(e){}}
+// The example plan points at example courses that are never saved, so it is never saved either.
+const metaOut=()=>S.meta.plan?.demo?{...S.meta,plan:null}:S.meta;
+let lsWarned=false;
+function lsSave(){try{const c={...S,meta:metaOut()};for(const k of Object.values(KIND))c[k]=S[k].filter(e=>!e.demo);localStorage.setItem(LS,JSON.stringify(c))}catch(e){if(!lsWarned&&MODE!=='server'){lsWarned=true;toast('This browser is out of storage space, so new changes may not be kept. Start the server (npm start) or export a backup.','bad')}}}
 function lsLoad(){try{const v=JSON.parse(localStorage.getItem(LS)||'null');if(v){for(const k of Object.values(KIND))S[k]=v[k]||[];S.meta={...S.meta,...(v.meta||{})}}}catch(e){}}
 async function initStore(){
   lsLoad();
@@ -228,7 +232,7 @@ async function flush(){
   try{for(const [id,e] of [...pend]){pend.delete(id);try{
     let r;
     if(e.__del)r=await fetch('/api/doc/'+encodeURIComponent(id),{method:'DELETE'});
-    else{const c=JSON.parse(JSON.stringify(e));delete c._images;r=await fetch('/api/doc/'+encodeURIComponent(id),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(c)})}
+    else{const c=JSON.parse(JSON.stringify(e===S.meta?metaOut():e));delete c._images;delete c._full;r=await fetch('/api/doc/'+encodeURIComponent(id),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(c)})}
     if(!r.ok)throw{message:'server answered '+r.status};
   }catch(err){pend.set(id,e);toast('Could not save to the server ('+(err?.message||'offline')+'). Kept in this browser; will retry.','bad');break}}}
   finally{flushing=false;if(pend.size)schedule(4000)}
@@ -246,14 +250,21 @@ async function askText(input,onText,opts={}){
   if(!(await getAI()))throw{code:'no_ai'};
   const messages=typeof input==='string'?[{role:'user',content:input}]:input;
   const images=opts.images?await Promise.all(opts.images.map(async b=>({media_type:b.type||'image/jpeg',data:await toB64(b)}))):[];
-  const r=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages,images,tier:opts.modelTier||'default'})});
+  let r;try{r=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages,images,tier:opts.modelTier||'default'})})}catch(e){throw{code:'network',message:'Could not reach the Study Hub server. Is it still running (npm start)?'}}
   if(!r.ok){let j={};try{j=await r.json()}catch(e){}throw{code:j.code,message:j.message||('AI request failed ('+r.status+')')}}
-  const rd=r.body.getReader(),dec=new TextDecoder();let text='';
-  for(;;){const {value,done}=await rd.read();if(done)break;text+=dec.decode(value,{stream:true});onText&&onText(text)}
-  return text;
+  const rd=r.body.getReader(),dec=new TextDecoder();let raw='';
+  try{for(;;){const {value,done}=await rd.read();if(done)break;raw+=dec.decode(value,{stream:true});onText&&onText(cleanAI(raw).text)}}
+  catch(e){throw{code:'network',message:'The connection dropped while the AI was answering. Try again.'}}
+  const {text,flag,detail}=cleanAI(raw);
+  if(flag==='refusal'&&!text.trim())throw{code:'refusal',message:'The AI declined to answer this one. Try rewording it or removing unrelated content.'};
+  if(flag==='error'&&!text.trim())throw{code:'upstream',message:'AI error: '+(detail||'unknown')+'. Try again.'};
+  if(opts.strict&&flag)throw{code:flag,message:flag==='cut_off'?'The AI reply was too long and got cut off. Try fewer questions or a shorter file.':flag==='refusal'?'The AI declined to answer this one.':'AI error: '+(detail||'unknown')+'. Try again.'};
+  return flag?text+(flag==='cut_off'?'\n\n*(The answer was cut off because it was too long. Ask a follow-up to continue.)*':flag==='refusal'?'\n\n*(The AI stopped here and declined to continue.)*':'\n\n*(The answer stopped early: '+esc(detail||'AI error')+'.)*'):text;
 }
-async function askJSON(prompt,opts={}){const t=await askText(prompt+'\n\nReply with ONLY valid JSON. No prose, no code fences.',null,opts);return parseJSON(t)}
-function aiErr(e){const c=e?.code;if(c==='no_ai'||c==='no_key')return'AI is off: add your ANTHROPIC_API_KEY to the .env file and restart the server.';if(c==='rate_limited')return'Too many AI requests right now. Wait a minute and try again.';return e?.message||String(e||'Something went wrong. Try again.')}
+// The server adds a marker line when a reply was cut short; split it off the text.
+function cleanAI(raw){const m=raw.match(/\n\[\[studyhub:(cut_off|refusal|error)\]\]([^\n]*)/);return m?{text:raw.slice(0,m.index),flag:m[1],detail:m[2].trim()}:{text:raw,flag:null}}
+async function askJSON(prompt,opts={}){const t=await askText(prompt+'\n\nReply with ONLY valid JSON. No prose, no code fences.',null,{...opts,strict:true});return parseJSON(t)}
+function aiErr(e){const c=e?.code;if(c==='no_ai'||c==='no_key')return'AI is off: add your ANTHROPIC_API_KEY to the .env file and restart the server.';if(c==='rate_limited')return'The AI is busy right now. Wait a minute and try again.';return e?.message||String(e||'Something went wrong. Try again.')}
 
 /* ---------- file reading ---------- */
 const CDN='https://cdn.jsdelivr.net/npm/';const loaded={};
@@ -274,7 +285,7 @@ async function readFile(file){
   }
   if(ext==='docx'){await loadScript(CDN+'mammoth@1.6.0/mammoth.browser.min.js');const r=await window.mammoth.extractRawText({arrayBuffer:await file.arrayBuffer()});return{text:r.value,images:[]}}
   if(ext==='pptx'){await loadScript(CDN+'jszip@3.10.1/dist/jszip.min.js');const z=await window.JSZip.loadAsync(await file.arrayBuffer());const ks=Object.keys(z.files).filter(k=>/^ppt\/slides\/slide\d+\.xml$/.test(k)).sort((a,b)=>+a.match(/\d+/)[0]-+b.match(/\d+/)[0]);let out='';for(const [i,k] of ks.entries()){const x=await z.file(k).async('string');out+='\n\n[Slide '+(i+1)+']\n'+decodeXml(x.replace(/<\/a:p>/g,'\n').replace(/<[^>]+>/g,''))}return{text:out.trim(),images:[]}}
-  if(ext==='xlsx'||ext==='xls'){await loadScript(CDN+'xlsx@0.18.5/dist/xlsx.full.min.js');const wb=window.XLSX.read(await file.arrayBuffer());return{text:wb.SheetNames.map(n=>'[Sheet '+n+']\n'+window.XLSX.utils.sheet_to_csv(wb.Sheets[n])).join('\n\n'),images:[]}}
+  if(ext==='xlsx'||ext==='xls'){await loadScript('https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js');const wb=window.XLSX.read(await file.arrayBuffer());return{text:wb.SheetNames.map(n=>'[Sheet '+n+']\n'+window.XLSX.utils.sheet_to_csv(wb.Sheets[n])).join('\n\n'),images:[]}}
   throw new Error('This file type is not supported. Save it as PDF, DOCX or PPTX and add it again.');
 }
 
@@ -282,9 +293,11 @@ async function readFile(file){
 function md(src){
   if(!src)return'';const maths=[];
   let s=String(src).replace(/\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$([^\s$](?:[^$\n]*?[^\s$])?)\$/g,m=>{maths.push(m);return'@@M'+(maths.length-1)+'@@'});
-  let h=window.marked?window.marked.parse(s):esc(s).replace(/\n/g,'<br>');
+  // AI text can echo whatever is inside an uploaded file, so it is only rendered as HTML when DOMPurify is loaded.
+  const safe=!!window.DOMPurify;
+  let h=safe&&window.marked?window.marked.parse(s):esc(s).replace(/\n/g,'<br>');
   h=h.replace(/@@M(\d+)@@/g,(_,i)=>esc(maths[+i]));
-  return window.DOMPurify?window.DOMPurify.sanitize(h,{ADD_TAGS:['details','summary']}):h;
+  return safe?window.DOMPurify.sanitize(h,{ADD_TAGS:['details','summary']}):h;
 }
 function typeset(el){try{if(window.MathJax?.typesetPromise)window.MathJax.typesetPromise([el||document.body]).catch(()=>{})}catch(e){}}
 
@@ -311,9 +324,21 @@ function autoTick(type,cid,ref){
   const hit=tasks.filter(x=>x.t.courseId===cid&&x.t.type===type&&!x.t.done&&(ref?x.t.ref===ref:true)).sort((a,b)=>a.date<b.date?-1:1)[0];
   if(hit){hit.t.done=true;hit.t.doneAt=todayISO();saveMeta()}
 }
-function confirmBox(msg,yes='Delete'){return new Promise(res=>{const r=$('#modalRoot');r.innerHTML=`<div class="modal"><div class="glass"><h3>${esc(msg)}</h3><div class="row" style="justify-content:flex-end"><button class="btn ghost" id="cNo">Cancel</button><button class="btn pri" id="cYes">${esc(yes)}</button></div></div></div>`;$('#cNo').onclick=()=>{r.innerHTML='';res(false)};$('#cYes').onclick=()=>{r.innerHTML='';res(true)}})}
+function confirmBox(msg,yes='Delete'){return new Promise(res=>{const r=$('#modalRoot');r.innerHTML=`<div class="modal"><div class="glass" role="alertdialog" aria-modal="true" aria-labelledby="cMsg"><h3 id="cMsg">${esc(msg)}</h3><div class="row" style="justify-content:flex-end"><button class="btn ghost" id="cNo" data-cancel>Cancel</button><button class="btn pri" id="cYes">${esc(yes)}</button></div></div></div>`;$('#cYes').focus();$('#cNo').onclick=()=>{r.innerHTML='';res(false)};$('#cYes').onclick=()=>{r.innerHTML='';res(true)}})}
 
 /* ---------- AI tasks ---------- */
+// AI JSON is not guaranteed to have the shape we asked for, so coerce it before it reaches the page.
+const str=v=>v==null?'':typeof v==='string'?v:typeof v==='object'?Object.values(v).map(str).filter(Boolean).join(': '):String(v);
+const strs=(v,max=20)=>(Array.isArray(v)?v:v==null||v===''?[]:[v]).map(str).filter(x=>x.trim()).slice(0,max);
+function normSummary(s,name){s=s&&typeof s==='object'?s:{};return{title:str(s.title).trim()||name,oneLine:str(s.oneLine),summary:str(s.summary),keyPoints:strs(s.keyPoints,12),
+  terms:(Array.isArray(s.terms)?s.terms:[]).map(t=>t&&typeof t==='object'?{term:str(t.term),def:str(t.def??t.definition)}:{term:str(t),def:''}).filter(t=>t.term).slice(0,12),
+  formulas:strs(s.formulas,15),examTips:strs(s.examTips,6),topics:strs(s.topics,6)}}
+function normProfile(p){p=p&&typeof p==='object'?p:{};return{questionTypes:(Array.isArray(p.questionTypes)?p.questionTypes:[]).filter(q=>q&&q.type).map(q=>({type:str(q.type),share:+q.share||0})),
+  difficulty:str(p.difficulty),level:str(p.level),style:str(p.style),topics:strs(p.topics,8),examples:strs(p.examples,5),count:+p.count||null}}
+// The correct option may come back as 2, "2", "C", "C)" or the option text itself.
+function mcqIndex(a,opts){const s=String(a??'').trim();let i;
+  if(/^\d+$/.test(s))i=+s;else if(/^[A-H](?![a-z])/i.test(s))i=s.toUpperCase().charCodeAt(0)-65;else i=opts.findIndex(o=>o.trim().toLowerCase()===s.toLowerCase());
+  return i>=0&&i<opts.length?i:0}
 async function summarize(c,name,text,images,onStage){
   let src=text;
   if(text.length>42000){const parts=[];for(let i=0;i<text.length;i+=36000)parts.push(text.slice(i,i+36000));const notes=[];
@@ -349,7 +374,10 @@ Base every question on this course material:
 """${notes}"""
 Return JSON: {"questions":[{"type":"mcq"|"tf"|"short"|"problem","question": markdown (use $...$ for math),"options": 4 strings (mcq only),"answer": for mcq the 0-based index of the correct option; for tf true or false; for short/problem a complete model answer (problems show the worked steps),"explanation": 1-3 sentences on why,"topic": short topic tag}]}
 Spread the correct option position across A-D. Never ask about the file's formatting.`);
-  const qs=(r.questions||[]).filter(q=>q&&q.question).map(q=>{const t=['mcq','tf','short','problem'].includes(q.type)?q.type:'short';if(t==='mcq'&&(!Array.isArray(q.options)||q.options.length<2))return{...q,type:'short',answer:String(q.answer)};if(t==='tf')q.answer=q.answer===true||String(q.answer).toLowerCase()==='true';if(t==='mcq')q.answer=Math.max(0,Math.min(q.options.length-1,parseInt(q.answer,10)||0));return{...q,type:t}});
+  const qs=(Array.isArray(r.questions)?r.questions:[]).filter(q=>q&&q.question).map(q=>{q={...q,question:str(q.question),explanation:str(q.explanation),topic:str(q.topic).trim()||'General'};const t=['mcq','tf','short','problem'].includes(q.type)?q.type:'short';
+    if(t==='mcq'){const opts=Array.isArray(q.options)?q.options.map(str).slice(0,LET.length):[];if(opts.length<2)return{...q,type:'short',answer:str(q.answer)};return{...q,type:t,options:opts,answer:mcqIndex(q.answer,opts)}}
+    if(t==='tf')return{...q,type:t,answer:q.answer===true||String(q.answer).trim().toLowerCase()==='true'};
+    return{...q,type:t,answer:str(q.answer)}});
   if(!qs.length)throw{message:'No questions came back. Try again.'};return qs;
 }
 async function gradeOpen(c,items){const r=await askJSON(`You are grading a student's answers in the college course "${c.name}". Be fair and kind: give partial credit for a correct method even with a small slip. For each item give "score" from 0 to 1 (0, 0.25, 0.5, 0.75 or 1) and "feedback": 1-2 specific sentences on what was right and what was missing.
@@ -372,19 +400,31 @@ Assignment:
 /* ---------- plan ---------- */
 function genPlan(){
   const start=todayISO();
-  let end=S.meta.planEnd&&daysUntil(S.meta.planEnd)>0?S.meta.planEnd:addDays(start,27);
+  let end=S.meta.planEnd&&daysUntil(S.meta.planEnd)>=3?S.meta.planEnd:addDays(start,27);
   const H=Math.max(1,Math.min(29,daysUntil(end)));
   const old=new Map(planTasks().map(t=>[t.key,t]));
   const days=Array.from({length:H+1},(_,i)=>({date:addDays(start,i),tasks:[]}));
+  const cap=(S.meta.hours||3)*60;const load=days.map(()=>0);const items=[];
   for(const c of S.courses){
-    let last=H;const ex=daysUntil(c.examDate);if(ex!==null&&ex>=0)last=Math.max(0,Math.min(H,ex-1));
+    let last=H;const ex=daysUntil(c.examDate);
+    if(ex!==null&&ex<0)continue; // exam already over: nothing left to plan
+    if(ex!==null)last=Math.max(0,Math.min(H,ex-1));
     const q=[];const ms=matsOf(c.id).filter(m=>m.summary);
     if(!ms.length)q.push({type:'upload',label:'Add lecture files for '+c.name,mins:15});
     ms.forEach((m,i)=>{q.push({type:'study',ref:m.id,label:'Study: '+m.summary.title,mins:40});if(i%2===1||i===ms.length-1)q.push({type:'quiz',ref:'q'+i,label:'Practice test: '+ms.slice(Math.max(0,i-1),i+1).map(x=>x.summary.title).join(' + '),scope:ms.slice(Math.max(0,i-1),i+1).map(x=>x.id),mins:25})});
     asgOf(c.id).filter(a=>!a.understood).forEach(a=>q.push({type:'assign',ref:a.id,label:'Work through: '+a.name,mins:45}));
     if(ms.length){q.push({type:'weak',ref:'w',label:'Drill weak topics',mins:30});q.push({type:'review',ref:'r',label:'Re-read all summaries and key terms',mins:40});q.push({type:'mock',ref:'m',label:'Full mock exam',mins:60})}
-    q.forEach((t,k)=>{const d=q.length===1?0:Math.round(k*last/(q.length-1));t.courseId=c.id;t.key=c.id+':'+t.type+':'+(t.ref||k);t.id=uid();const o=old.get(t.key);if(o){t.done=o.done;t.doneAt=o.doneAt}days[d].tasks.push(t)});
+    const seq={last,prev:0};
+    q.forEach((t,k)=>{t.courseId=c.id;t.key=c.id+':'+t.type+':'+(t.ref||k);t.id=uid();const o=old.get(t.key);if(o){t.done=o.done;t.doneAt=o.doneAt}
+      items.push({t,seq,k,ideal:q.length===1?0:Math.round(k*last/(q.length-1))})});
   }
+  // Spread each course evenly up to the day before its exam, keep its tasks in order,
+  // and move a task to a later (or least busy) day when its ideal day is already full.
+  items.sort((a,b)=>a.ideal-b.ideal||a.seq.last-b.seq.last||a.k-b.k);
+  for(const it of items){const {t,seq}=it;const from=Math.min(Math.max(it.ideal,seq.prev),seq.last);let d=-1;
+    for(let i=from;i<=seq.last;i++)if(load[i]+t.mins<=cap){d=i;break}
+    if(d<0){d=from;for(let i=from;i<=seq.last;i++)if(load[i]<load[d])d=i}
+    seq.prev=d;load[d]+=t.mins;days[d].tasks.push(t)}
   S.meta.plan={created:Date.now(),start,end,days};S.meta.planEnd=end;saveMeta();
 }
 
@@ -396,7 +436,7 @@ function loadDemo(){
   [['Limits and continuity','How a function behaves near a point, and when it has no jumps.',['A limit can exist even if f(a) does not','Continuity needs three conditions'],['limits']],['Derivatives','The derivative measures how fast a function changes.',['Power rule','Product and quotient rules'],['derivatives']],['Chain rule','How to differentiate a function inside another function.',['Outside derivative times inside derivative'],['chain rule']]].forEach((x,i)=>S.materials.push({id:'dm'+i,kind:'material',demo:true,courseId:cid,name:x[0]+'.pdf',addedAt:Date.now()+i,status:'ready',studied:i<2,summary:sm(...x)}));
   [62,71,80].forEach((p,i)=>S.quizzes.push({id:'dq'+i,kind:'quiz',demo:true,courseId:cid,date:Date.now()-(3-i)*DAY,day:addDays(t,i-3),n:10,pct:p,weak:i<2?['chain rule']:[],label:'Practice test'}));
 }
-function clearDemo(){for(const k of Object.values(KIND))S[k]=S[k].filter(e=>!e.demo);if(S.meta.plan?.demo){S.meta.plan=null}}
+function clearDemo(){for(const k of Object.values(KIND))S[k]=S[k].filter(e=>!e.demo);if(S.meta.plan?.demo){S.meta.plan=null;saveMeta()}}
 const hasDemo=()=>S.courses.some(c=>c.demo);
 
 /* ---------- render ---------- */
@@ -417,7 +457,7 @@ function sideHTML(r){
   <a class="nav ${r.v==='plan'?'on':''}" href="#plan">Study plan</a>
   <div class="navlabel">Courses</div>${cs}
   <button class="nav" data-act="addCourse" style="background:none;cursor:pointer;color:var(--teal);font-weight:600">+ Add course</button>
-  <div class="sidefoot">${MODE==='server'?'Saved to data/db.json':'Server offline: saved in this browser'}</div>`;
+  <div class="sidefoot"><div>${MODE==='server'?'Saved to data/db.json':'Server offline: saved in this browser'}</div><div class="row" style="gap:6px;margin-top:8px"><button class="btn sm ghost" data-act="export">Export backup</button><button class="btn sm ghost" data-act="import">Import</button></div></div>`;
 }
 function ringSVG(v){const R=86,C=2*Math.PI*R;return`<svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="${R}" fill="none" stroke="var(--hair)" stroke-width="16"/><circle cx="100" cy="100" r="${R}" fill="none" stroke="url(#rg)" stroke-width="16" stroke-linecap="round" stroke-dasharray="${C*v/100} ${C}"/><defs><linearGradient id="rg" x1="0" x2="1"><stop offset="0" stop-color="#0e9a97"/><stop offset="1" stop-color="#ff8d6e"/></linearGradient></defs></svg>`}
 function taskRow(t){const c=course(t.courseId);if(!c)return'';return`<div class="task ${t.done?'done':''}"><input type="checkbox" data-act="tick" data-id="${t.id}" ${t.done?'checked':''} aria-label="Done"><div class="t"><span>${esc(t.label)}</span><div class="small mute"><span class="cdot" style="background:${c.color}"></span>${esc(c.name)} · ${t.mins} min</div></div>${t.type!=='upload'?`<button class="btn sm ghost go" data-act="doTask" data-id="${t.id}">Open</button>`:`<a class="btn sm ghost go" href="#c-${c.id}">Open</a>`}</div>`}
@@ -428,7 +468,7 @@ function dashHTML(){
   const tasks=planTasks();const t=todayISO();
   const today=tasks.filter(x=>x.date===t);const overdue=tasks.filter(x=>x.date<t&&!x.done);
   const planPct=tasks.length?pct(tasks.filter(x=>x.done).length/tasks.length*100):0;
-  const next=S.courses.filter(c=>daysUntil(c.examDate)>=0).sort((a,b)=>daysUntil(a.examDate)-daysUntil(b.examDate))[0];
+  const next=S.courses.filter(c=>c.examDate&&daysUntil(c.examDate)>=0).sort((a,b)=>daysUntil(a.examDate)-daysUntil(b.examDate))[0];
   const qs=S.quizzes.slice().sort((a,b)=>a.date-b.date);const avg=qs.length?pct(qs.slice(-5).reduce((a,q)=>a+q.pct,0)/Math.min(5,qs.length)):null;
   const hr=new Date().getHours();const greet=hr<12?'Good morning':hr<18?'Good afternoon':'Good evening';
   const todayMins=today.filter(x=>!x.done).reduce((a,x)=>a+x.mins,0);
@@ -454,7 +494,7 @@ function planHTML(){
   const tasks=planTasks();const done=tasks.filter(x=>x.done).length;const lim=(S.meta.hours||3)*60;
   const head=`<section class="glass pane grid" style="gap:16px"><div class="row between"><div><h1>Study plan</h1><p class="mute">Every course finished before its exam, inside ${Math.min(29,daysUntil(end))+1} days.</p></div>${p?`<div style="min-width:220px"><div class="row between small"><span>${done} of ${tasks.length} tasks</span><b>${tasks.length?pct(done/tasks.length*100):0}%</b></div><div class="bar" style="margin-top:6px"><i style="width:${tasks.length?pct(done/tasks.length*100):0}%"></i></div></div>`:''}</div>
   <div class="row" style="align-items:flex-end"><label class="f" style="width:200px">Finish everything by<input type="date" id="planEnd" value="${end}" min="${addDays(t,3)}" max="${addDays(t,29)}"></label><label class="f" style="width:170px">Hours per day<select id="planHours">${[1,2,3,4,5,6,8].map(h=>`<option ${h==(S.meta.hours||3)?'selected':''}>${h}</option>`).join('')}</select></label><button class="btn pri" data-act="makePlan">${p?'Rebuild plan':'Build my plan'}</button></div>
-  <p class="small mute">Each lecture becomes a study session, followed by a practice test every two lectures, then assignments, weak-topic drills, a full review and a mock exam before each final. Rebuilding keeps what you have already ticked.</p></section>`;
+  <p class="small mute">Each lecture becomes a study session, followed by a practice test every two lectures, then assignments, weak-topic drills, a full review and a mock exam before each final. Days are filled up to your hours per day where the exam dates allow. Rebuilding keeps what you have already ticked.</p></section>`;
   if(!S.courses.length)return head+`<section class="glass pane empty"><p>Add a course first.</p><button class="btn pri" data-act="addCourse">Add course</button></section>`;
   if(!p)return head;
   return head+`<section class="grid g3">${p.days.map(d=>{const m=d.tasks.reduce((a,x)=>a+x.mins,0);return`<div class="glass day ${d.date===t?'today':''} ${d.date<t?'past':''}"><div class="row between"><h3>${d.date===t?'Today':fmtD(d.date)}</h3><span class="small ${m>lim?'':'mute'}" style="${m>lim?'color:var(--coral)':''}">${m?m+' min':'Rest / catch up'}</span></div>${d.tasks.map(x=>taskRow(x)).join('')}</div>`}).join('')}</section>`;
@@ -534,7 +574,7 @@ function asgHTML(c){
 function courseModal(c){
   const e=c||{name:'',examDate:'',color:COLORS[S.courses.filter(x=>!x.demo).length%COLORS.length]};let color=e.color;
   const r=$('#modalRoot');
-  r.innerHTML=`<div class="modal"><form class="glass" id="cForm"><h2>${c?'Edit course':'Add a course'}</h2><label class="f">Course name<input type="text" id="cName" value="${esc(e.name)}" placeholder="e.g. Organic Chemistry" required></label><label class="f">Final exam date<input type="date" id="cExam" value="${e.examDate||''}"></label><div class="f" style="font-weight:600;font-size:14px">Colour<div class="swatches" style="margin-top:6px">${COLORS.map(k=>`<button type="button" data-k="${k}" class="${k===color?'on':''}" style="background:${k}" aria-label="Colour ${k}"></button>`).join('')}</div></div><div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" id="cCancel">Cancel</button><button class="btn pri">${c?'Save':'Add course'}</button></div></form></div>`;
+  r.innerHTML=`<div class="modal"><form class="glass" id="cForm" role="dialog" aria-modal="true" aria-labelledby="cTitle"><h2 id="cTitle">${c?'Edit course':'Add a course'}</h2><label class="f">Course name<input type="text" id="cName" value="${esc(e.name)}" placeholder="e.g. Organic Chemistry" required></label><label class="f">Final exam date<input type="date" id="cExam" value="${e.examDate||''}"></label><div class="f" style="font-weight:600;font-size:14px">Colour<div class="swatches" style="margin-top:6px">${COLORS.map(k=>`<button type="button" data-k="${k}" class="${k===color?'on':''}" style="background:${k}" aria-label="Colour ${k}"></button>`).join('')}</div></div><div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" id="cCancel" data-cancel>Cancel</button><button class="btn pri">${c?'Save':'Add course'}</button></div></form></div>`;
   $('#cName').focus();
   $$('.swatches button',r).forEach(b=>b.onclick=()=>{color=b.dataset.k;$$('.swatches button',r).forEach(x=>x.classList.toggle('on',x===b))});
   $('#cCancel').onclick=()=>r.innerHTML='';
@@ -552,23 +592,24 @@ async function processUpload(kind,cid,files){
       const {text,images}=await readFile(f);
       if(!text.trim()&&!images.length)throw new Error('No readable text found in this file.');
       if(!text.trim()&&!(await imgOK()))throw new Error('This file is scanned pages, and image reading is not available here. Try a PDF with selectable text, or paste the text.');
-      e.text=text.slice(0,30000);e._images=images;
+      // Only the first 30k characters are stored, but the AI reads the whole file the first time.
+      e.text=text.slice(0,30000);e._full=text;e._images=images;
       await runAI(e,c,images);
     }catch(err){e.status='error';e.error=aiErr(err);delete e.stage;render()}
     save(e);
   }
 }
 async function runAI(e,c,images=[]){
-  const text=e.text||'';e.status='working';e.error=null;
+  const text=e._full||e.text||'';e.status='working';e.error=null;
   try{
-    if(e.kind==='material'){e.stage='Summarizing…';render();e.summary=await summarize(c,e.name,text,images,s=>{e.stage=s;render()});if(S.meta.plan)genPlan()}
-    else if(e.kind==='sheet'){e.stage='Studying the question style…';render();e.profile=await analyzeSheet(c,e.name,text,images)}
+    if(e.kind==='material'){e.stage='Summarizing…';render();e.summary=normSummary(await summarize(c,e.name,text,images,s=>{e.stage=s;render()}),e.name);if(S.meta.plan)genPlan()}
+    else if(e.kind==='sheet'){e.stage='Studying the question style…';render();e.profile=normProfile(await analyzeSheet(c,e.name,text,images))}
     else if(e.kind==='assignment'){e.stage='Solving…';e.status='streaming';render();const ok=images.length&&await imgOK();
       e.solution=await askText(solvePrompt(c,text||'(The assignment is in the attached images.)'),t=>{e.solution=t;const el=document.getElementById('sol-'+e.id);if(el)el.innerHTML=md(t)},{modelTier:'complex',...(ok?{images:images.slice(0,8)}:{})});
       if(S.meta.plan)genPlan()}
     e.status='ready';delete e.stage;logActivity();
   }catch(err){e.status='error';e.error=aiErr(err);delete e.stage}
-  delete e._images;render();
+  delete e._images;delete e._full;render();
 }
 async function startQuiz(c,opts,label){
   if(c.demo){toast('Add your own course to take real tests.');return}
@@ -612,6 +653,32 @@ function doTask(id){
   else if(t.type==='weak')startQuiz(c,{n:10,diff:'match',scope:null,focus:weakTopics(c.id).join(', ')||'the hardest topics',kind:'weak'},'Weak-topic drill');
   else{ui.tab[c.id]='sum';render()}
 }
+function exportData(){
+  const docs=[...allEntities(),metaOut()].map(e=>{const c=JSON.parse(JSON.stringify(e));delete c._images;delete c._full;return c});
+  const blob=new Blob([JSON.stringify({app:'study-hub',version:1,exportedAt:new Date().toISOString(),docs},null,1)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='study-hub-backup-'+todayISO()+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+async function importData(file){
+  let j;try{j=JSON.parse(await file.text())}catch(e){toast('That file is not a Study Hub backup.','bad');return}
+  const docs=Array.isArray(j?.docs)?j.docs.filter(d=>d&&typeof d==='object'&&/^[A-Za-z0-9_-]{1,80}$/.test(d.id||'')&&(KIND[d.kind]||d.kind==='meta')&&!d.demo):null;
+  if(j?.app!=='study-hub'||!docs){toast('That file is not a Study Hub backup.','bad');return}
+  // These fields go into the page unescaped, so a backup file must not be able to put markup in them.
+  const num=v=>Number.isFinite(+v)?+v:0,okId=v=>/^[A-Za-z0-9_:-]{1,120}$/.test(String(v||''));
+  docs.forEach(d=>{
+    const isDate=v=>/^\d{4}-\d\d-\d\d$/.test(v||'');
+    if(d.kind==='course'){if(!/^#[0-9a-f]{3,8}$/i.test(d.color||''))d.color=COLORS[0];if(!isDate(d.examDate))d.examDate=''}
+    if(d.kind==='meta'&&!isDate(d.planEnd))d.planEnd=null;
+    if(d.kind==='quiz'){d.pct=pct(num(d.pct));d.n=num(d.n);d.date=num(d.date)}
+    if(d.addedAt!=null)d.addedAt=num(d.addedAt);
+    if(d.kind==='meta'){d.hours=num(d.hours)||3;if(d.plan&&Array.isArray(d.plan.days))d.plan.days=d.plan.days.filter(x=>x&&/^\d{4}-\d\d-\d\d$/.test(x.date)).map(x=>({date:x.date,tasks:(Array.isArray(x.tasks)?x.tasks:[]).filter(t=>t&&okId(t.id)&&okId(t.courseId)).map(t=>({...t,mins:num(t.mins)}))}));else d.plan=null}
+  });
+  const n=docs.filter(d=>d.kind==='course').length;
+  if(!(await confirmBox(`Replace everything here with this backup (${n} course${n===1?'':'s'})? Your current data will be deleted.`,'Replace')))return;
+  allEntities().forEach(remove);clearDemo();ui.run=null;
+  for(const d of docs){if(d.kind==='meta'){S.meta={...S.meta,...d,id:'meta',kind:'meta'};saveMeta()}else{if(d.status&&d.status!=='ready')d.status='error',d.error=d.error||'Interrupted. Retry to finish.';if(d.summary)d.summary=normSummary(d.summary,d.name);if(d.profile)d.profile=normProfile(d.profile);S[KIND[d.kind]].push(d);save(d)}}
+  location.hash='dashboard';render();toast('Backup restored.');
+}
+$('#importPick').addEventListener('change',e=>{const f=e.target.files[0];if(f)importData(f);e.target.value=''});
 let dropTarget=null;
 function pick(kind,cid){dropTarget={kind,cid};const f=$('#filePick');f.value='';f.click()}
 $('#filePick').addEventListener('change',e=>{if(dropTarget&&e.target.files.length)processUpload(dropTarget.kind,dropTarget.cid,[...e.target.files])});
@@ -625,7 +692,9 @@ document.addEventListener('click',async e=>{
     case'addCourse':courseModal();break;
     case'editCourse':courseModal(course(id));break;
     case'demo':loadDemo();render();break;
-    case'delCourse':{const c=course(id);if(await confirmBox('Delete '+c.name+' and everything in it?')){[...matsOf(id),...sheetsOf(id),...quizOf(id),...asgOf(id)].forEach(remove);remove(c);if(S.meta.plan)genPlan();location.hash='dashboard';render()}break}
+    case'export':exportData();break;
+    case'import':$('#importPick').click();break;
+    case'delCourse':{const c=course(id);if(await confirmBox('Delete '+c.name+' and everything in it?')){[...matsOf(id),...sheetsOf(id),...quizOf(id),...asgOf(id)].forEach(remove);remove(c);if(ui.run?.cid===id)ui.run=null;if(S.meta.plan)genPlan();location.hash='dashboard';render()}break}
     case'tab':ui.tab[id]=el.dataset.tab;render();break;
     case'studied':{const m=S.materials.find(x=>x.id===id);if(!m)break;m.studied=!m.studied;ui.openMat=m.id;if(m.studied){m.studiedAt=todayISO();autoTick('study',m.courseId,m.id);logActivity()}else{const t=planTasks().find(x=>x.type==='study'&&x.ref===m.id);if(t){t._t.done=false;saveMeta()}}save(m);render();break}
     case'tick':{const t=planTasks().find(x=>x.id===id);if(t){t._t.done=el.checked;t._t.doneAt=el.checked?todayISO():null;if(el.checked)logActivity();if(t.type==='study'){const m=S.materials.find(x=>x.id===t.ref);if(m){m.studied=el.checked;save(m)}}saveMeta();render()}break}
@@ -652,16 +721,23 @@ document.addEventListener('click',async e=>{
   }
 });
 document.addEventListener('input',e=>{const el=e.target;const A=el.dataset?.act;if(A==='typeAns'&&ui.run){ui.run.ans[ui.run.idx]=el.value;const d=$$('.qdots button')[ui.run.idx];if(d)d.classList.toggle('a',!!el.value.trim())}if(A==='asgDraft')ui.asg[el.dataset.id]=el.value;if(A==='chatDraft')ui.chat[el.dataset.id]=el.value});
-document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.dataset?.act==='chatDraft'){e.preventDefault();ask(S.assignments.find(x=>x.id===e.target.dataset.id))}if((e.key==='Enter'||e.key===' ')&&e.target.classList?.contains('drop')){e.preventDefault();pick(e.target.dataset.drop,e.target.dataset.id)}});
+// Escape, or a click on the dimmed backdrop, cancels whichever dialog is open.
+const cancelModal=()=>$('#modalRoot [data-cancel]')?.click();
+$('#modalRoot').addEventListener('mousedown',e=>{if(e.target.classList.contains('modal'))cancelModal()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#modalRoot').firstChild){e.preventDefault();cancelModal();return}if(e.key==='Enter'&&e.target.dataset?.act==='chatDraft'){e.preventDefault();ask(S.assignments.find(x=>x.id===e.target.dataset.id))}if((e.key==='Enter'||e.key===' ')&&e.target.classList?.contains('drop')){e.preventDefault();pick(e.target.dataset.drop,e.target.dataset.id)}});
 document.addEventListener('toggle',e=>{const d=e.target;if(d.dataset?.mat){if(d.open)ui.openMat=d.dataset.mat;else if(ui.openMat===d.dataset.mat)ui.openMat=null}},true);
 document.addEventListener('dragover',e=>{const d=e.target.closest?.('.drop');if(d){e.preventDefault();d.classList.add('over')}});
 document.addEventListener('dragleave',e=>{const d=e.target.closest?.('.drop');if(d)d.classList.remove('over')});
 document.addEventListener('drop',e=>{const d=e.target.closest?.('.drop');if(!d)return;e.preventDefault();d.classList.remove('over');if(e.dataTransfer.files.length)processUpload(d.dataset.drop,d.dataset.id,[...e.dataTransfer.files])});
 window.addEventListener('hashchange',()=>{render();window.scrollTo(0,0)});
+// Warn before closing the tab while the AI is still working or a test is half done.
+window.addEventListener('beforeunload',e=>{const busy=Object.values(KIND).some(k=>S[k].some(x=>x.status==='working'||x.status==='streaming'))||(ui.run&&ui.run.phase!=='done'&&ui.run.ans.some(a=>a!=null&&a!==''))||pend.size;if(busy){e.preventDefault();e.returnValue=''}});
 
 (async()=>{
   await initStore();
   for(const k of Object.values(KIND))S[k].forEach(e=>{if(e.status&&e.status!=='ready'&&e.status!=='error'){e.status='error';e.error='Interrupted. Retry to finish.'}});
+  S.materials.forEach(m=>{if(m.summary)m.summary=normSummary(m.summary,m.name)});
+  S.sheets.forEach(s=>{if(s.profile)s.profile=normProfile(s.profile)});
   render();
   getAI().then(()=>render());
 })();
