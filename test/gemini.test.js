@@ -53,14 +53,14 @@ test('Gemini is the provider when its key is set, with a lower concurrency', asy
   assert.equal(h.ai, true);
   assert.equal(h.provider, 'gemini');
   assert.equal(h.concurrency, 2);
-  assert.equal(h.models.default, 'gemini-2.5-flash');
+  assert.equal(h.models.default, 'gemini-3.5-flash');
 });
 
 test('requests use the streaming endpoint, key header and Gemini message format', async () => {
   const r = await post({ messages: [{ role: 'user', content: 'Q1' }, { role: 'assistant', content: 'A1' }, { role: 'user', content: 'Q2' }], images: [{ media_type: 'image/png', data: 'QUJD' }], tier: 'quick' });
   assert.equal(r.status, 200);
   assert.equal(r.text, 'Hello there');
-  assert.equal(last.url, '/v1beta/models/gemini-2.5-flash-lite:streamGenerateContent?alt=sse');
+  assert.equal(last.url, '/v1beta/models/gemini-3.5-flash-lite:streamGenerateContent?alt=sse');
   assert.ok(last.headers['x-goog-api-key'] === 'g-test-key', 'wrong key header (value not shown)');
   assert.deepEqual(last.body.contents.map(c => c.role), ['user', 'model', 'user']);
   assert.deepEqual(last.body.contents[2].parts, [{ inline_data: { mime_type: 'image/png', data: 'QUJD' } }, { text: 'Q2' }]);

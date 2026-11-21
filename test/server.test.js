@@ -14,7 +14,7 @@ let fake, fakeURL, srv, base, dataDir, lastUpstream, nextReply;
 // Tests must never see a real API key: drop any from the environment, and compare keys
 // without printing them, so a failing check cannot leak one into a log.
 const CLEAN_ENV = { ...process.env };
-for (const k of ['ANTHROPIC_API_KEY', 'STUDYHUB_API_KEY', 'ANTHROPIC_AUTH_TOKEN']) delete CLEAN_ENV[k];
+for (const k of ['ANTHROPIC_API_KEY', 'STUDYHUB_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'AI_PROVIDER']) delete CLEAN_ENV[k];
 const sentKey = k => assert.ok(lastUpstream.headers['x-api-key'] === k, 'the server did not send the expected test key (value not shown)');
 
 const sse = events => events.map(e => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join('');

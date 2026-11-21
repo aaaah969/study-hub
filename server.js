@@ -26,9 +26,9 @@ const PROVIDERS = {
     key: GEMINI_KEY,
     // Model names change over time: override them in .env if Google retires one.
     models: {
-      quick: env('GEMINI_MODEL_QUICK') || 'gemini-2.5-flash-lite',
-      default: env('GEMINI_MODEL_DEFAULT') || 'gemini-2.5-flash',
-      complex: env('GEMINI_MODEL_COMPLEX') || 'gemini-2.5-flash',
+      quick: env('GEMINI_MODEL_QUICK') || 'gemini-3.5-flash-lite',
+      default: env('GEMINI_MODEL_DEFAULT') || 'gemini-3.5-flash',
+      complex: env('GEMINI_MODEL_COMPLEX') || 'gemini-3.5-flash',
     },
     // Thinking counts toward the output limit on Gemini 2.5 models too.
     maxTokens: { quick: 16384, default: 32768, complex: 65536 },
