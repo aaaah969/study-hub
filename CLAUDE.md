@@ -32,6 +32,9 @@ Every entity is one document with `id` and `kind`:
 
 ## Conventions
 - AI prompts that return data ask for JSON and are parsed by `parseJSON` (it tolerates code fences). Then coerce the shape (`normSummary`, `normProfile`, the question mapping in `genQuiz`, `mcqIndex`) before storing: render code assumes arrays of strings.
+- Saving: `save(e)` stamps `updatedAt`, writes the browser copy and marks the id dirty (`studyhub.dirty.v1` in localStorage, with deletions in `dirty.del`); `flush()` sends dirty ids and clears each only after the server confirms. If the server is unreachable the app goes offline (one toast), retries with backoff, on `online` and when the tab is shown, then `syncWithServer()` merges: dirty or deleted-here wins, server wins otherwise, items only one side has are kept. Objects are updated in place because running AI jobs hold references. Always use `save()`/`remove()`, never write `S` arrays to the server directly.
+- AI requests go through `askText()`: at most 4 at once (`withSlot`), and a request that fails with rate_limited/overloaded/network before any text arrived is retried twice. Up to 3 uploaded files are processed at a time.
+- Summaries: files up to `DIRECT` (150k chars) go in one request; longer ones are split into `PART` (60k) pieces condensed in parallel on the quick tier (Haiku), then summarized on the default tier.
 - Uploads keep only the first 30k characters in `text`, but the full file is passed to the AI once through the transient `_full` field (never saved, like `_images`).
 - The plan (`genPlan`) spreads each course up to the day before its exam, keeps a course's tasks in order and fills days up to `meta.hours`; courses whose exam has passed get no tasks.
 - Export/Import backup (sidebar) writes/reads `{app:'study-hub',version:1,docs:[...]}`. Import replaces everything and cleans fields that are put into HTML unescaped (colour, dates, ids, numbers).

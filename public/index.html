@@ -203,41 +203,98 @@ const S={courses:[],materials:[],sheets:[],quizzes:[],assignments:[],meta:{id:'m
 const ui={tab:{},run:null,builder:{},asg:{},chat:{},openMat:null,busy:{}};
 
 /* ---------- storage: data/db.json via the local server, with a browser copy as backup ---------- */
+// Every change is written to the browser at once and marked "dirty"; dirty ids are sent to the
+// server and cleared only when the server confirms. The dirty list is in localStorage too, so
+// changes made while the server is down survive closing the tab and are sent when it is back.
 let MODE='local';
-const LS='studyhub.v1';
+const LS='studyhub.v1',LS_DIRTY='studyhub.dirty.v1';
 const timeout=(p,ms)=>Promise.race([p,new Promise((_,r)=>setTimeout(()=>r({code:'timeout'}),ms))]);
 // The example plan points at example courses that are never saved, so it is never saved either.
 const metaOut=()=>S.meta.plan?.demo?{...S.meta,plan:null}:S.meta;
+// Transient fields (whole file text, page images) never leave memory.
+const clean=e=>JSON.parse(JSON.stringify(e===S.meta?metaOut():e,(k,v)=>k==='_full'||k==='_images'?undefined:v));
 let lsWarned=false;
-function lsSave(){try{const c={...S,meta:metaOut()};for(const k of Object.values(KIND))c[k]=S[k].filter(e=>!e.demo);localStorage.setItem(LS,JSON.stringify(c))}catch(e){if(!lsWarned&&MODE!=='server'){lsWarned=true;toast('This browser is out of storage space, so new changes may not be kept. Start the server (npm start) or export a backup.','bad')}}}
+function lsSave(){try{const c={meta:clean(S.meta)};for(const k of Object.values(KIND))c[k]=S[k].filter(e=>!e.demo).map(clean);localStorage.setItem(LS,JSON.stringify(c))}catch(e){if(!lsWarned){lsWarned=true;toast('This browser is out of storage space for its backup copy. Export a backup from the sidebar to be safe.','bad')}}}
 function lsLoad(){try{const v=JSON.parse(localStorage.getItem(LS)||'null');if(v){for(const k of Object.values(KIND))S[k]=v[k]||[];S.meta={...S.meta,...(v.meta||{})}}}catch(e){}}
+let dirty={put:{},del:{}};
+try{const d=JSON.parse(localStorage.getItem(LS_DIRTY)||'null');if(d&&d.put&&d.del)dirty=d}catch(e){}
+function dirtySave(){try{localStorage.setItem(LS_DIRTY,JSON.stringify(dirty))}catch(e){}}
+const dirtyCount=()=>Object.keys(dirty.put).length+Object.keys(dirty.del).length;
+const allEntities=()=>Object.values(KIND).flatMap(k=>S[k]).filter(e=>!e.demo);
+const findDoc=id=>id==='meta'?S.meta:allEntities().find(e=>e.id===id);
+let flushT=null,flushing=false,flushAgain=false;
+function schedule(ms){clearTimeout(flushT);flushT=setTimeout(flush,ms)}
+function save(e){if(!e||e.demo)return;e.updatedAt=Date.now();delete dirty.del[e.id];dirty.put[e.id]=1;dirtySave();lsSave();if(MODE==='server')schedule(700)}
+function saveMeta(){save(S.meta)}
+function remove(e){const arr=S[KIND[e.kind]];const i=arr.indexOf(e);if(i>=0)arr.splice(i,1);if(e.demo)return;delete dirty.put[e.id];dirty.del[e.id]=1;dirtySave();lsSave();if(MODE==='server')schedule(400)}
+async function flush(){
+  if(MODE!=='server')return;
+  if(flushing){flushAgain=true;return}
+  flushing=true;flushAgain=false;
+  try{
+    for(const id of Object.keys(dirty.del)){
+      const r=await fetch('/api/doc/'+encodeURIComponent(id),{method:'DELETE'});
+      if(!r.ok&&r.status!==400)throw{status:r.status};
+      if(dirty.del[id]){delete dirty.del[id];dirtySave()}
+    }
+    for(const id of Object.keys(dirty.put)){
+      const e=findDoc(id);if(!e){delete dirty.put[id];dirtySave();continue}
+      const stamp=e.updatedAt;
+      const r=await fetch('/api/doc/'+encodeURIComponent(id),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(clean(e))});
+      if(r.status===400||r.status===413){delete dirty.put[id];dirtySave();toast('"'+(e.name||id)+'" could not be saved to the server ('+(r.status===413?'too large':'rejected')+'). It is kept in this browser.','bad');continue}
+      if(!r.ok)throw{status:r.status};
+      // Only clear it if nothing changed while the request was in flight.
+      if(e.updatedAt===stamp){delete dirty.put[id];dirtySave()}
+    }
+  }catch(err){goOffline()}
+  finally{flushing=false;if(MODE==='server'&&(flushAgain||dirtyCount()))schedule(flushAgain?100:4000);renderSide()}
+}
+
+// ---------- going offline and coming back ----------
+let retryT=null,retryMs=3000;
+function goOffline(){
+  if(MODE==='local')return;
+  MODE='local';renderSide();
+  toast('Cannot reach the Study Hub server. Your changes are kept in this browser and will be sent when it is back.','bad');
+  scheduleReconnect(3000);
+}
+function scheduleReconnect(ms){clearTimeout(retryT);retryMs=ms;retryT=setTimeout(reconnect,ms)}
+async function reconnect(){
+  clearTimeout(retryT);if(MODE==='server')return;
+  const ok=await syncWithServer();
+  if(ok){const n=dirtyCount();toast(n?'Back online. Sending '+n+' saved change'+(n>1?'s':'')+' to the server…':'Back online. Everything is saved on the server.');render()}
+  else scheduleReconnect(Math.min(retryMs*2,60000));
+}
+window.addEventListener('online',()=>{if(MODE!=='server')reconnect()});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&MODE!=='server')reconnect()});
+
+// Merge the server copy into what is in memory. A dirty local item wins; an item deleted here
+// stays deleted; anything only one side has is kept (and sent up if it is only here).
+// Existing objects are updated in place, because running AI jobs hold references to them.
+async function syncWithServer(){
+  let docs;
+  try{const r=await timeout(fetch('/api/state'),8000);if(!r.ok)return false;({docs}=await r.json())}catch(e){return false}
+  const local=new Map(allEntities().map(e=>[e.id,e]));const seen=new Set();
+  for(const d of docs){
+    if(d.kind==='meta'){if(!dirty.put.meta)replaceIn(S.meta,{...S.meta,...d});continue}
+    if(!KIND[d.kind]||dirty.del[d.id])continue;
+    seen.add(d.id);const l=local.get(d.id);
+    if(!l)S[KIND[d.kind]].push(d)
+    else if(!dirty.put[d.id]&&l.status!=='working'&&l.status!=='streaming')replaceIn(l,d);
+  }
+  if(docs.some(d=>d.kind==='course')&&hasDemo())clearDemo();
+  for(const [id,l] of local)if(!seen.has(id)&&l.status!=='working'&&l.status!=='streaming'){dirty.put[id]=1}
+  if(!docs.some(d=>d.kind==='meta'))dirty.put.meta=1;
+  dirtySave();MODE='server';lsSave();
+  if(dirtyCount())schedule(200);
+  return true;
+}
+function renderSide(){const el=$('#side');if(el)el.innerHTML=sideHTML(route())}
+function replaceIn(target,src){for(const k of Object.keys(target))if(!(k in src)&&!k.startsWith('_'))delete target[k];Object.assign(target,src)}
 async function initStore(){
   lsLoad();
-  try{
-    const r=await timeout(fetch('/api/state'),8000);if(!r.ok)throw 0;const {docs}=await r.json();
-    if(!docs.length){MODE='server';[...allEntities(),S.meta].forEach(e=>pend.set(e.id,e));schedule(300)}
-    else{const fresh={courses:[],materials:[],sheets:[],quizzes:[],assignments:[]};let meta=null;
-      docs.forEach(c=>{if(c.kind==='meta')meta=c;else if(KIND[c.kind])fresh[KIND[c.kind]].push(c)});
-      Object.assign(S,fresh);if(meta)S.meta={...S.meta,...meta};MODE='server';lsSave()}
-  }catch(e){MODE='local'}
+  if(!(await syncWithServer())){MODE='local';scheduleReconnect(3000)}
 }
-const allEntities=()=>Object.values(KIND).flatMap(k=>S[k]).filter(e=>!e.demo);
-const pend=new Map();let flushT=null,flushing=false;
-function schedule(ms){clearTimeout(flushT);flushT=setTimeout(flush,ms)}
-function save(e){if(e&&e.demo)return;lsSave();if(MODE!=='server'||!e)return;pend.set(e.id,e);schedule(700)}
-function saveMeta(){save(S.meta)}
-async function flush(){
-  if(flushing){schedule(500);return}
-  flushing=true;
-  try{for(const [id,e] of [...pend]){pend.delete(id);try{
-    let r;
-    if(e.__del)r=await fetch('/api/doc/'+encodeURIComponent(id),{method:'DELETE'});
-    else{const c=JSON.parse(JSON.stringify(e===S.meta?metaOut():e));delete c._images;delete c._full;r=await fetch('/api/doc/'+encodeURIComponent(id),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(c)})}
-    if(!r.ok)throw{message:'server answered '+r.status};
-  }catch(err){pend.set(id,e);toast('Could not save to the server ('+(err?.message||'offline')+'). Kept in this browser; will retry.','bad');break}}}
-  finally{flushing=false;if(pend.size)schedule(4000)}
-}
-function remove(e){const arr=S[KIND[e.kind]];const i=arr.indexOf(e);if(i>=0)arr.splice(i,1);if(e.demo)return;lsSave();if(MODE==='server'){pend.set(e.id,{id:e.id,__del:true});schedule(400)}}
 function logActivity(){const t=todayISO();const a=S.meta.activity||(S.meta.activity=[]);if(!a.includes(t)){a.push(t);if(a.length>120)a.shift();saveMeta()}}
 
 /* ---------- AI: the local server forwards to the Anthropic API ---------- */
@@ -246,7 +303,19 @@ async function getAI(){if(SAMPLE!==undefined)return SAMPLE;try{const r=await tim
 async function imgOK(){return true}
 function parseJSON(t){t=String(t||'').trim().replace(/^```(?:json)?\s*/i,'').replace(/```\s*$/,'');try{return JSON.parse(t)}catch(e){}const a=t.indexOf('{'),b=t.lastIndexOf('}');if(a>=0&&b>a){try{return JSON.parse(t.slice(a,b+1))}catch(e){}}throw{code:'bad_json',message:'The AI reply could not be read. Please try again.'}}
 const toB64=b=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(b)});
+// At most 4 AI requests run at once (long files and several uploads run in parallel),
+// and a request that fails before any text arrived is retried when the API was busy.
+const AI_SLOTS=4;let aiActive=0;const aiQueue=[];
+async function withSlot(fn){if(aiActive>=AI_SLOTS)await new Promise(r=>aiQueue.push(r));aiActive++;try{return await fn()}finally{aiActive--;aiQueue.shift()?.()}}
+const RETRY=new Set(['rate_limited','overloaded','network']);
 async function askText(input,onText,opts={}){
+  for(let attempt=0;;attempt++){
+    let got=false;
+    try{return await withSlot(()=>askOnce(input,t=>{got=true;onText&&onText(t)},opts))}
+    catch(e){if(got||attempt>=2||!RETRY.has(e?.code))throw e;await new Promise(r=>setTimeout(r,attempt?8000:3000))}
+  }
+}
+async function askOnce(input,onText,opts){
   if(!(await getAI()))throw{code:'no_ai'};
   const messages=typeof input==='string'?[{role:'user',content:input}]:input;
   const images=opts.images?await Promise.all(opts.images.map(async b=>({media_type:b.type||'image/jpeg',data:await toB64(b)}))):[];
@@ -339,18 +408,23 @@ function normProfile(p){p=p&&typeof p==='object'?p:{};return{questionTypes:(Arra
 function mcqIndex(a,opts){const s=String(a??'').trim();let i;
   if(/^\d+$/.test(s))i=+s;else if(/^[A-H](?![a-z])/i.test(s))i=s.toUpperCase().charCodeAt(0)-65;else i=opts.findIndex(o=>o.trim().toLowerCase()===s.toLowerCase());
   return i>=0&&i<opts.length?i:0}
+// Up to DIRECT characters (about 60-80 pages of text) go to the AI in one request. Longer files
+// are cut into parts that the fast model condenses in parallel, then one summary is written.
+const DIRECT=150000,PART=60000;
 async function summarize(c,name,text,images,onStage){
   let src=text;
-  if(text.length>42000){const parts=[];for(let i=0;i<text.length;i+=36000)parts.push(text.slice(i,i+36000));const notes=[];
-    for(const [k,p] of parts.entries()){onStage&&onStage('Reading part '+(k+1)+' of '+parts.length+'…');notes.push(await askText(`You are condensing part ${k+1} of ${parts.length} of a lecture file for the college course "${c.name}". Write dense study notes (max 450 words). Keep every definition, formula, rule, process and example type. Use $...$ for math.\nSource:\n"""${p}"""`))}
-    src=notes.join('\n\n');}
+  if(text.length>DIRECT){const parts=[];for(let i=0;i<text.length;i+=PART)parts.push(text.slice(i,i+PART));let done=0;
+    onStage&&onStage('Reading a long file: 0 of '+parts.length+' parts…');
+    const notes=await Promise.all(parts.map((p,k)=>askText(`You are condensing part ${k+1} of ${parts.length} of a lecture file for the college course "${c.name}". Write dense study notes (max 450 words). Keep every definition, formula, rule, process and example type. Use $...$ for math.\nSource:\n"""${p}"""`,null,{modelTier:'quick'})
+      .then(t=>{done++;onStage&&onStage('Reading a long file: '+done+' of '+parts.length+' parts…');return t})));
+    src=notes.map((t,k)=>`[Part ${k+1}]\n${t}`).join('\n\n');}
   onStage&&onStage('Writing your summary…');
   const ok=images.length&&await imgOK();
   return askJSON(`You are a friendly expert tutor for the college course "${c.name}". Summarize this lecture material ("${name}") for a student preparing for quizzes and the final exam.
 Write in simple, clear English: short sentences, everyday words, no fluff. Explain so a beginner truly understands, using a quick example where it helps. Use $...$ for inline math and $$...$$ for display math.
 Return JSON with exactly these keys:
 {"title": short topic title, "oneLine": one sentence on what this lecture is about, "summary": markdown of 150-320 words with short headings or bullets explaining the ideas, "keyPoints": 5-8 short strings the student must remember, "terms": up to 8 objects {"term","def"} with one-line definitions, "formulas": important formulas or rules as strings (may be empty), "examTips": up to 4 strings on what is likely to be asked and common mistakes, "topics": 2-6 short topic tags}
-${text.trim()?`Material:\n"""${src.slice(0,46000)}"""`:'The material is given as page images.'}`,ok?{images:images.slice(0,8)}:{});
+${text.trim()?`Material:\n"""${src.slice(0,DIRECT)}"""`:'The material is given as page images.'}`,ok?{images:images.slice(0,8)}:{});
 }
 async function analyzeSheet(c,name,text,images){
   const ok=images.length&&await imgOK();
@@ -457,7 +531,7 @@ function sideHTML(r){
   <a class="nav ${r.v==='plan'?'on':''}" href="#plan">Study plan</a>
   <div class="navlabel">Courses</div>${cs}
   <button class="nav" data-act="addCourse" style="background:none;cursor:pointer;color:var(--teal);font-weight:600">+ Add course</button>
-  <div class="sidefoot"><div>${MODE==='server'?'Saved to data/db.json':'Server offline: saved in this browser'}</div><div class="row" style="gap:6px;margin-top:8px"><button class="btn sm ghost" data-act="export">Export backup</button><button class="btn sm ghost" data-act="import">Import</button></div></div>`;
+  <div class="sidefoot"><div>${MODE==='server'?(dirtyCount()?'Saving…':'Saved to data/db.json'):`<span style="color:var(--coral)">Server offline.</span> ${dirtyCount()?dirtyCount()+' change'+(dirtyCount()>1?'s':'')+' kept in this browser, sent when it is back.':'Saved in this browser.'} <button class="btn sm ghost" data-act="reconnect" style="margin-top:6px">Try again</button>`}</div><div class="row" style="gap:6px;margin-top:8px"><button class="btn sm ghost" data-act="export">Export backup</button><button class="btn sm ghost" data-act="import">Import</button></div></div>`;
 }
 function ringSVG(v){const R=86,C=2*Math.PI*R;return`<svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="${R}" fill="none" stroke="var(--hair)" stroke-width="16"/><circle cx="100" cy="100" r="${R}" fill="none" stroke="url(#rg)" stroke-width="16" stroke-linecap="round" stroke-dasharray="${C*v/100} ${C}"/><defs><linearGradient id="rg" x1="0" x2="1"><stop offset="0" stop-color="#0e9a97"/><stop offset="1" stop-color="#ff8d6e"/></linearGradient></defs></svg>`}
 function taskRow(t){const c=course(t.courseId);if(!c)return'';return`<div class="task ${t.done?'done':''}"><input type="checkbox" data-act="tick" data-id="${t.id}" ${t.done?'checked':''} aria-label="Done"><div class="t"><span>${esc(t.label)}</span><div class="small mute"><span class="cdot" style="background:${c.color}"></span>${esc(c.name)} · ${t.mins} min</div></div>${t.type!=='upload'?`<button class="btn sm ghost go" data-act="doTask" data-id="${t.id}">Open</button>`:`<a class="btn sm ghost go" href="#c-${c.id}">Open</a>`}</div>`}
@@ -584,10 +658,12 @@ function courseModal(c){
 }
 async function processUpload(kind,cid,files){
   const c=course(cid);if(!c)return;if(c.demo){toast('This is the example course. Add your own course to upload files.');return}
-  for(const f of files){
-    const e={id:uid(),kind,courseId:cid,name:f.name.replace(/\.[^.]+$/,''),addedAt:Date.now(),status:'working',stage:'Reading file…'};
-    if(kind==='material')e.studied=false;
-    S[KIND[kind]].push(e);if(kind==='assignment')ui.openMat=e.id;render();
+  // Every file shows up straight away; up to 3 are read and summarized at the same time.
+  const jobs=files.map((f,i)=>{const e={id:uid(),kind,courseId:cid,name:f.name.replace(/\.[^.]+$/,''),addedAt:Date.now()+i,status:'working',stage:'Waiting…'};
+    if(kind==='material')e.studied=false;S[KIND[kind]].push(e);if(kind==='assignment')ui.openMat=e.id;return{f,e}});
+  render();
+  let next=0;
+  await Promise.all(Array.from({length:Math.min(3,jobs.length)},async()=>{while(next<jobs.length){const {f,e}=jobs[next++];e.stage='Reading file…';render();
     try{
       const {text,images}=await readFile(f);
       if(!text.trim()&&!images.length)throw new Error('No readable text found in this file.');
@@ -596,8 +672,8 @@ async function processUpload(kind,cid,files){
       e.text=text.slice(0,30000);e._full=text;e._images=images;
       await runAI(e,c,images);
     }catch(err){e.status='error';e.error=aiErr(err);delete e.stage;render()}
-    save(e);
-  }
+    if(S[KIND[kind]].includes(e))save(e);
+  }}));
 }
 async function runAI(e,c,images=[]){
   const text=e._full||e.text||'';e.status='working';e.error=null;
@@ -693,6 +769,7 @@ document.addEventListener('click',async e=>{
     case'editCourse':courseModal(course(id));break;
     case'demo':loadDemo();render();break;
     case'export':exportData();break;
+    case'reconnect':reconnect();break;
     case'import':$('#importPick').click();break;
     case'delCourse':{const c=course(id);if(await confirmBox('Delete '+c.name+' and everything in it?')){[...matsOf(id),...sheetsOf(id),...quizOf(id),...asgOf(id)].forEach(remove);remove(c);if(ui.run?.cid===id)ui.run=null;if(S.meta.plan)genPlan();location.hash='dashboard';render()}break}
     case'tab':ui.tab[id]=el.dataset.tab;render();break;
@@ -731,7 +808,8 @@ document.addEventListener('dragleave',e=>{const d=e.target.closest?.('.drop');if
 document.addEventListener('drop',e=>{const d=e.target.closest?.('.drop');if(!d)return;e.preventDefault();d.classList.remove('over');if(e.dataTransfer.files.length)processUpload(d.dataset.drop,d.dataset.id,[...e.dataTransfer.files])});
 window.addEventListener('hashchange',()=>{render();window.scrollTo(0,0)});
 // Warn before closing the tab while the AI is still working or a test is half done.
-window.addEventListener('beforeunload',e=>{const busy=Object.values(KIND).some(k=>S[k].some(x=>x.status==='working'||x.status==='streaming'))||(ui.run&&ui.run.phase!=='done'&&ui.run.ans.some(a=>a!=null&&a!==''))||pend.size;if(busy){e.preventDefault();e.returnValue=''}});
+// (Unsaved changes are safe: they are in the browser and are sent to the server later.)
+window.addEventListener('beforeunload',e=>{const busy=Object.values(KIND).some(k=>S[k].some(x=>x.status==='working'||x.status==='streaming'))||(ui.run&&ui.run.phase!=='done'&&ui.run.ans.some(a=>a!=null&&a!==''));if(busy){e.preventDefault();e.returnValue=''}});
 
 (async()=>{
   await initStore();
