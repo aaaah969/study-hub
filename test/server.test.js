@@ -11,6 +11,12 @@ const { spawn } = require('child_process');
 
 let fake, fakeURL, srv, base, dataDir, lastUpstream, nextReply;
 
+// Tests must never see a real API key: drop any from the environment, and compare keys
+// without printing them, so a failing check cannot leak one into a log.
+const CLEAN_ENV = { ...process.env };
+for (const k of ['ANTHROPIC_API_KEY', 'STUDYHUB_API_KEY', 'ANTHROPIC_AUTH_TOKEN']) delete CLEAN_ENV[k];
+const sentKey = k => assert.ok(lastUpstream.headers['x-api-key'] === k, 'the server did not send the expected test key (value not shown)');
+
 const sse = events => events.map(e => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`).join('');
 const textReply = (text, stop = 'end_turn') => sse([
   { type: 'message_start', message: { id: 'm1' } },
@@ -47,7 +53,7 @@ before(async () => {
   const port = 30000 + Math.floor(Math.random() * 20000);
   base = 'http://localhost:' + port;
   srv = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
-    env: { ...process.env, PORT: String(port), DATA_DIR: dataDir, ANTHROPIC_API_KEY: 'test-key', ANTHROPIC_BASE_URL: fakeURL, HOST: '127.0.0.1' },
+    env: { ...CLEAN_ENV, PORT: String(port), DATA_DIR: dataDir, ANTHROPIC_API_KEY: 'test-key', ANTHROPIC_BASE_URL: fakeURL, HOST: '127.0.0.1' },
     stdio: ['ignore', 'pipe', 'inherit'],
   });
   await new Promise((resolve, reject) => { srv.stdout.on('data', d => { if (String(d).includes('running')) resolve(); }); srv.on('exit', c => reject(new Error('server exited ' + c))); });
@@ -109,7 +115,7 @@ test('AI replies stream as plain text, without the thinking', async () => {
   assert.deepEqual(b.output_config, { effort: 'high' });
   assert.equal(b.fallbacks, 'default');
   assert.equal(lastUpstream.headers['anthropic-beta'], 'server-side-fallback-2026-07-01');
-  assert.equal(lastUpstream.headers['x-api-key'], 'test-key');
+  sentKey('test-key');
 });
 
 test('quick tier uses Haiku without the fallback beta', async () => {
@@ -145,8 +151,7 @@ test('invalid conversations and upstream errors give clear errors', async () => 
 
 test('STUDYHUB_API_KEY is accepted as the key', async () => {
   const port = 30000 + Math.floor(Math.random() * 20000);
-  const env = { ...process.env, PORT: String(port), DATA_DIR: dataDir, STUDYHUB_API_KEY: 'alt-key', ANTHROPIC_BASE_URL: fakeURL };
-  delete env.ANTHROPIC_API_KEY;
+  const env = { ...CLEAN_ENV, PORT: String(port), DATA_DIR: dataDir, STUDYHUB_API_KEY: 'alt-key', ANTHROPIC_BASE_URL: fakeURL };
   const s2 = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], { env, stdio: ['ignore', 'pipe', 'inherit'] });
   try {
     await new Promise(r => s2.stdout.on('data', d => String(d).includes('running') && r()));
@@ -155,6 +160,6 @@ test('STUDYHUB_API_KEY is accepted as the key', async () => {
       q.on('error', reject); q.end(JSON.stringify({ messages: [{ role: 'user', content: 'hi' }] }));
     });
     assert.equal(r.status, 200);
-    assert.equal(lastUpstream.headers['x-api-key'], 'alt-key');
+    sentKey('alt-key');
   } finally { s2.kill(); }
 });
