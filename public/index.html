@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Study Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script>window.MathJax={tex:{inlineMath:[['$','$'],['\\(','\\)']],displayMath:[['$$','$$'],['\\[','\\]']]},svg:{fontCache:'global'},startup:{typeset:false}};</script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+<style>
+/* VOICE everyday: a calm, encouraging study companion
+   IDEA frosted glass panes on a sunlit desk: every course, summary and test is a pane you pick up
+   PICTURE the readiness ring + today's plan on the dashboard; inside a course the live summary or test itself
+   COLOUR mint haze ground with teal, coral and sun light behind the glass; ink teal text; night = same light over deep ink
+   TYPE Outfit for headings, Inter for reading
+   LAYOUT glass sidebar + content up to 1180px; under 860px the sidebar becomes a top bar and everything stacks */
+:root{color-scheme:light dark;--bg:light-dark(#e6f1ee,#081416);--ink:light-dark(#0f2a2d,#e3efed);--mute:light-dark(#4b6669,#9ab3b1);--glass:light-dark(rgba(255,255,255,.56),rgba(18,36,40,.6));--glass2:light-dark(rgba(255,255,255,.82),rgba(26,48,53,.78));--edge:light-dark(rgba(255,255,255,.9),rgba(255,255,255,.1));--hair:light-dark(rgba(15,42,45,.12),rgba(255,255,255,.1));--teal:light-dark(#0b7a7c,#43c6c2);--tealbg:light-dark(rgba(11,122,124,.12),rgba(67,198,194,.16));--coral:light-dark(#d9532f,#ff8d6e);--sun:light-dark(#b98100,#f6c453);--good:light-dark(#23804a,#62d391);--bad:light-dark(#bf3b27,#ff8b7b);--b1:light-dark(rgba(36,178,170,.55),rgba(36,178,170,.26));--b2:light-dark(rgba(255,145,110,.5),rgba(255,120,90,.2));--b3:light-dark(rgba(247,206,92,.55),rgba(247,190,70,.16));--sh:0 8px 28px light-dark(rgba(20,70,70,.1),rgba(0,0,0,.35))}
+:root[data-theme=light]{color-scheme:light}
+:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.55 Inter,system-ui,sans-serif;overflow-x:clip;min-height:100vh}
+h1,h2,h3,h4{font-family:Outfit,system-ui,sans-serif;line-height:1.1;letter-spacing:-.01em;margin:0}
+h1{font-size:clamp(30px,4vw,44px);font-weight:700;text-wrap:balance}
+h2{font-size:24px;font-weight:600}
+h3{font-size:19px;font-weight:600}
+p{margin:0}
+button,input,select,textarea{font:inherit;color:inherit}
+.sky{position:fixed;inset:0;z-index:-1;overflow:hidden;background:var(--bg)}
+.sky i{position:absolute;border-radius:50%;filter:blur(80px);animation:drift 26s ease-in-out infinite alternate}
+.sky i:nth-child(1){width:48vw;height:48vw;left:-10vw;top:-14vw;background:var(--b1)}
+.sky i:nth-child(2){width:40vw;height:40vw;right:-8vw;top:18vh;background:var(--b2);animation-delay:-9s}
+.sky i:nth-child(3){width:36vw;height:36vw;left:28vw;bottom:-16vw;background:var(--b3);animation-delay:-17s}
+@keyframes drift{to{transform:translate(4vw,3vh) scale(1.08)}}
+@media(prefers-reduced-motion:reduce){.sky i{animation:none}}
+.glass{background:var(--glass);border:1px solid var(--edge);backdrop-filter:blur(20px) saturate(1.35);-webkit-backdrop-filter:blur(20px) saturate(1.35);border-radius:20px;box-shadow:var(--sh)}
+.app{display:grid;grid-template-columns:250px minmax(0,1fr);gap:20px;padding:20px;max-width:1460px;margin:0 auto}
+aside{position:sticky;top:20px;height:calc(100vh - 40px);padding:18px 12px;display:flex;flex-direction:column;gap:4px;overflow-y:auto}
+.brand{display:flex;align-items:center;gap:10px;padding:4px 10px 16px;font:700 21px Outfit,sans-serif}
+.brand svg{flex:none}
+.nav{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;color:var(--ink);text-decoration:none;font-weight:500;min-height:44px;border:1px solid transparent}
+.nav:hover{background:var(--tealbg)}
+.nav.on{background:var(--glass2);border-color:var(--edge);font-weight:600}
+.nav .dot{width:10px;height:10px;border-radius:50%;flex:none}
+.nav small{margin-left:auto;color:var(--mute);font-size:13px;white-space:nowrap}
+.navlabel{font-size:13px;color:var(--mute);padding:14px 12px 4px}
+.sidefoot{margin-top:auto;font-size:13px;color:var(--mute);padding:12px}
+main{display:flex;flex-direction:column;gap:20px;max-width:1180px;width:100%;padding-bottom:40px}
+.pane{padding:22px}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.between{justify-content:space-between}
+.grid{display:grid;gap:20px}
+.g2{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)}
+.g3{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+.mute{color:var(--mute)}
+.small{font-size:14px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 18px;border-radius:12px;border:1px solid var(--edge);background:var(--glass2);cursor:pointer;font-weight:600;text-decoration:none;white-space:nowrap}
+.btn:hover{border-color:var(--teal)}
+.btn.pri{background:var(--teal);color:light-dark(#fff,#062022);border-color:transparent}
+.btn.pri:hover{filter:brightness(1.08)}
+.btn.ghost{background:transparent;border-color:var(--hair)}
+.btn.sm{min-height:36px;padding:0 12px;font-size:14px;border-radius:10px}
+.btn.danger{color:var(--bad)}
+.btn:disabled{opacity:.55;cursor:wait}
+:focus-visible{outline:3px solid var(--teal);outline-offset:2px}
+input[type=text],input[type=date],input[type=number],select,textarea{background:var(--glass2);border:1px solid var(--hair);border-radius:12px;padding:10px 12px;font-size:16px;min-height:44px;width:100%}
+textarea{min-height:140px;resize:vertical;line-height:1.5}
+label.f{display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:600}
+.drop{border:2px dashed color-mix(in srgb,var(--teal) 45%,transparent);border-radius:16px;padding:22px;text-align:center;cursor:pointer;background:var(--tealbg);transition:background .2s}
+.drop.over{background:color-mix(in srgb,var(--teal) 24%,transparent)}
+.drop b{display:block;font-size:17px;margin-bottom:4px}
+.tabs{display:flex;gap:6px;padding:6px;border-radius:16px;overflow-x:auto}
+.tab{flex:none;min-height:42px;padding:0 18px;border-radius:11px;border:0;background:transparent;cursor:pointer;font-weight:600;color:var(--mute)}
+.tab.on{background:var(--glass2);color:var(--ink);box-shadow:0 2px 8px rgba(0,0,0,.06)}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--tealbg);font-size:13px;font-weight:500;white-space:nowrap}
+.chip.coral{background:color-mix(in srgb,var(--coral) 16%,transparent)}
+.chip.sun{background:color-mix(in srgb,var(--sun) 18%,transparent)}
+.bar{height:8px;border-radius:99px;background:var(--hair);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:99px;background:var(--teal)}
+.kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(8.5em,1fr));gap:12px}
+.stat{padding:14px 16px;border-radius:16px;background:var(--glass2);border:1px solid var(--edge)}
+.stat b{display:block;font:700 clamp(24px,3vw,30px) Outfit,sans-serif;white-space:nowrap}
+.stat span{font-size:13px;color:var(--mute)}
+.hero{display:grid;grid-template-columns:auto minmax(0,1fr);gap:28px;align-items:center}
+.ring{position:relative;width:200px;height:200px}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring .lbl{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.ring .lbl b{font:700 48px Outfit,sans-serif;line-height:1}
+.ring .lbl span{font-size:13px;color:var(--mute)}
+.task{display:flex;gap:12px;align-items:flex-start;padding:10px 4px;border-bottom:1px solid var(--hair)}
+.task:last-child{border-bottom:0}
+.task input{width:22px;height:22px;margin-top:2px;accent-color:var(--teal);flex:none;cursor:pointer}
+.task .t{flex:1}
+.task.done .t>span{text-decoration:line-through;color:var(--mute)}
+.task .go{flex:none}
+.cdot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.ccard{display:flex;flex-direction:column;gap:12px;padding:20px;cursor:pointer;text-decoration:none;color:inherit}
+.ccard:hover{border-color:var(--teal)}
+.mrow{display:grid;grid-template-columns:7.5em minmax(0,1fr) 3em;gap:10px;align-items:center;font-size:14px}
+.mrow em{font-style:normal;text-align:right;font-variant-numeric:tabular-nums}
+.chart{display:flex;align-items:flex-end;gap:8px;height:170px;padding-top:22px}
+.chart .c{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:6px;max-width:56px}
+.chart .c i{width:100%;border-radius:8px 8px 4px 4px;min-height:4px}
+.chart .c span{font-size:13px;font-variant-numeric:tabular-nums}
+.mat{padding:0;overflow:hidden}
+.mat>summary{list-style:none;cursor:pointer;padding:18px 20px;display:flex;gap:14px;align-items:flex-start}
+.mat>summary::-webkit-details-marker{display:none}
+.mat[open]>summary{border-bottom:1px solid var(--hair)}
+.mat .body{padding:20px;display:grid;gap:18px}
+.md{line-height:1.65;overflow-wrap:break-word}
+.md h1,.md h2,.md h3,.md h4{margin:18px 0 8px;font-size:19px}
+.md p{margin:0 0 10px}
+.md ul,.md ol{margin:0 0 10px;padding-left:22px}
+.md li{margin:3px 0}
+.md pre{background:var(--glass2);padding:12px;border-radius:10px;overflow-x:auto}
+.md code{font-size:14px;overflow-wrap:anywhere}
+.md table{border-collapse:collapse;display:block;overflow-x:auto}
+.md td,.md th{border:1px solid var(--hair);padding:6px 10px}
+.md details{background:var(--tealbg);border-radius:10px;padding:8px 12px;margin:8px 0}
+.md mjx-container{overflow-x:auto;overflow-y:hidden;max-width:100%}
+.terms{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.term{padding:12px 14px;border-radius:14px;background:var(--glass2);border:1px solid var(--edge);font-size:14px}
+.term b{display:block;font-size:15px}
+.status{display:flex;gap:10px;align-items:center;font-size:14px;color:var(--mute)}
+.spin{width:18px;height:18px;border-radius:50%;border:2.5px solid var(--hair);border-top-color:var(--teal);animation:sp 0.8s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+.opt{display:flex;gap:12px;align-items:flex-start;width:100%;text-align:left;padding:14px 16px;border-radius:14px;border:1.5px solid var(--hair);background:var(--glass2);cursor:pointer;min-height:52px}
+.opt:hover{border-color:var(--teal)}
+.opt.sel{border-color:var(--teal);background:var(--tealbg)}
+.opt.right{border-color:var(--good);background:color-mix(in srgb,var(--good) 14%,transparent)}
+.opt.wrong{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 12%,transparent)}
+.opt .k{flex:none;width:28px;height:28px;border-radius:8px;display:grid;place-items:center;background:var(--hair);font-weight:700;font-size:14px}
+.qdots{display:flex;gap:6px;flex-wrap:wrap}
+.qdots button{width:34px;height:34px;border-radius:10px;border:1px solid var(--hair);background:var(--glass2);cursor:pointer;font-size:13px;font-weight:600}
+.qdots button.a{background:var(--tealbg);border-color:var(--teal)}
+.qdots button.c{outline:2px solid var(--teal)}
+.score{font:700 clamp(48px,8vw,72px) Outfit,sans-serif;line-height:1}
+.rev{padding:16px;border-radius:16px;background:var(--glass2);border:1px solid var(--edge);display:grid;gap:10px}
+.rev.ok{border-left:4px solid var(--good)}
+.rev.no{border-left:4px solid var(--bad)}
+.rev.part{border-left:4px solid var(--sun)}
+.day{padding:16px;display:flex;flex-direction:column;gap:4px}
+.day.today{outline:2px solid var(--teal)}
+.day.past{opacity:.78}
+.day h3{font-size:17px}
+.bubble{padding:12px 14px;border-radius:14px;max-width:88%}
+.bubble.me{background:var(--tealbg);margin-left:auto}
+.bubble.ai{background:var(--glass2);border:1px solid var(--edge)}
+.banner{padding:14px 18px;border-radius:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:color-mix(in srgb,var(--sun) 16%,var(--glass));border:1px solid var(--edge)}
+.modal{position:fixed;inset:0;background:rgba(5,20,22,.35);display:grid;place-items:center;padding:16px;z-index:50;backdrop-filter:blur(4px)}
+.modal .glass{width:min(480px,100%);padding:24px;display:grid;gap:16px;background:var(--glass2)}
+.swatches{display:flex;gap:8px;flex-wrap:wrap}
+.swatches button{width:36px;height:36px;border-radius:50%;border:3px solid transparent;cursor:pointer}
+.swatches button.on{border-color:var(--ink)}
+#toasts{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);display:grid;gap:8px;z-index:60;width:min(460px,calc(100% - 32px))}
+.toast{padding:12px 16px;border-radius:14px;background:var(--glass2);border:1px solid var(--edge);box-shadow:var(--sh);backdrop-filter:blur(16px);font-size:14px}
+.toast.bad{border-left:4px solid var(--bad)}
+.empty{text-align:center;padding:36px 20px;display:grid;gap:12px;justify-items:center}
+.steps3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;text-align:left;width:100%;max-width:760px}
+.steps3 div{padding:14px;border-radius:14px;background:var(--glass2);border:1px solid var(--edge);font-size:14px}
+.steps3 b{display:block;font-family:Outfit,sans-serif;font-size:17px;margin-bottom:4px}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg button{min-height:40px;padding:0 14px;border-radius:10px;border:1px solid var(--hair);background:var(--glass2);cursor:pointer;font-weight:500}
+.seg button.on{background:var(--teal);color:light-dark(#fff,#062022);border-color:transparent}
+.checks{display:grid;gap:6px;max-height:220px;overflow:auto;padding:4px}
+.checks label{display:flex;gap:10px;align-items:center;font-size:14px;cursor:pointer}
+.checks input{width:18px;height:18px;accent-color:var(--teal)}
+@media(max-width:1000px){.g2{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:860px){.app{grid-template-columns:minmax(0,1fr);padding:12px 16px;gap:14px}aside{position:sticky;top:8px;height:auto;flex-direction:row;align-items:center;overflow-x:auto;padding:6px;z-index:10;border-radius:16px}.brand{padding:4px 8px;font-size:18px}.brand span{display:none}.nav{flex:none;padding:8px 12px}.nav small,.navlabel,.sidefoot{display:none}}
+@media(max-width:600px){.hero{grid-template-columns:minmax(0,1fr);justify-items:center;text-align:center}.ring{width:170px;height:170px}.pane{padding:16px}.steps3{grid-template-columns:minmax(0,1fr)}.mrow{grid-template-columns:6.5em minmax(0,1fr) 3em}}
+</style>
+</head>
+<body>
+<div class="sky"><i></i><i></i><i></i></div>
+<div class="app">
+  <aside class="glass" id="side"></aside>
+  <main id="main"><div class="glass pane status"><div class="spin"></div>Opening your study hub…</div></main>
+</div>
+<div id="toasts"></div>
+<div id="modalRoot"></div>
+<input type="file" id="filePick" multiple hidden accept=".pdf,.docx,.pptx,.txt,.md,.csv,.xlsx,.xls,.png,.jpg,.jpeg,.webp,.tex">
+<script>
+{
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid=()=>Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4);
+const DAY=864e5;
+const isoD=d=>{const x=new Date(d);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0')};
+const todayISO=()=>isoD(new Date());
+const parseD=s=>{const [y,m,d]=String(s).split('-').map(Number);return new Date(y,(m||1)-1,d||1)};
+const addDays=(s,n)=>isoD(parseD(s).getTime()+n*DAY+3600e3);
+const daysUntil=s=>s?Math.round((parseD(s)-parseD(todayISO()))/DAY):null;
+const fmtD=s=>parseD(s).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'});
+const pct=x=>Math.max(0,Math.min(100,Math.round(x)));
+const COLORS=['#0e9a97','#e8643f','#d39a12','#3a78d4','#c0507c','#4c9a58','#6a7d86','#8d6a3f'];
+const KIND={course:'courses',material:'materials',sheet:'sheets',quiz:'quizzes',assignment:'assignments'};
+const S={courses:[],materials:[],sheets:[],quizzes:[],assignments:[],meta:{id:'meta',kind:'meta',plan:null,hours:3,planEnd:null,activity:[]}};
+const ui={tab:{},run:null,builder:{},asg:{},chat:{},openMat:null,busy:{}};
+
+/* ---------- storage: data/db.json via the local server, with a browser copy as backup ---------- */
+let MODE='local';
+const LS='studyhub.v1';
+const timeout=(p,ms)=>Promise.race([p,new Promise((_,r)=>setTimeout(()=>r({code:'timeout'}),ms))]);
+function lsSave(){try{const c={...S};for(const k of Object.values(KIND))c[k]=S[k].filter(e=>!e.demo);localStorage.setItem(LS,JSON.stringify(c))}catch(e){}}
+function lsLoad(){try{const v=JSON.parse(localStorage.getItem(LS)||'null');if(v){for(const k of Object.values(KIND))S[k]=v[k]||[];S.meta={...S.meta,...(v.meta||{})}}}catch(e){}}
+async function initStore(){
+  lsLoad();
+  try{
+    const r=await timeout(fetch('/api/state'),8000);if(!r.ok)throw 0;const {docs}=await r.json();
+    if(!docs.length){MODE='server';[...allEntities(),S.meta].forEach(e=>pend.set(e.id,e));schedule(300)}
+    else{const fresh={courses:[],materials:[],sheets:[],quizzes:[],assignments:[]};let meta=null;
+      docs.forEach(c=>{if(c.kind==='meta')meta=c;else if(KIND[c.kind])fresh[KIND[c.kind]].push(c)});
+      Object.assign(S,fresh);if(meta)S.meta={...S.meta,...meta};MODE='server';lsSave()}
+  }catch(e){MODE='local'}
+}
+const allEntities=()=>Object.values(KIND).flatMap(k=>S[k]).filter(e=>!e.demo);
+const pend=new Map();let flushT=null,flushing=false;
+function schedule(ms){clearTimeout(flushT);flushT=setTimeout(flush,ms)}
+function save(e){if(e&&e.demo)return;lsSave();if(MODE!=='server'||!e)return;pend.set(e.id,e);schedule(700)}
+function saveMeta(){save(S.meta)}
+async function flush(){
+  if(flushing){schedule(500);return}
+  flushing=true;
+  try{for(const [id,e] of [...pend]){pend.delete(id);try{
+    let r;
+    if(e.__del)r=await fetch('/api/doc/'+encodeURIComponent(id),{method:'DELETE'});
+    else{const c=JSON.parse(JSON.stringify(e));delete c._images;r=await fetch('/api/doc/'+encodeURIComponent(id),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(c)})}
+    if(!r.ok)throw{message:'server answered '+r.status};
+  }catch(err){pend.set(id,e);toast('Could not save to the server ('+(err?.message||'offline')+'). Kept in this browser; will retry.','bad');break}}}
+  finally{flushing=false;if(pend.size)schedule(4000)}
+}
+function remove(e){const arr=S[KIND[e.kind]];const i=arr.indexOf(e);if(i>=0)arr.splice(i,1);if(e.demo)return;lsSave();if(MODE==='server'){pend.set(e.id,{id:e.id,__del:true});schedule(400)}}
+function logActivity(){const t=todayISO();const a=S.meta.activity||(S.meta.activity=[]);if(!a.includes(t)){a.push(t);if(a.length>120)a.shift();saveMeta()}}
+
+/* ---------- AI: the local server forwards to the Anthropic API ---------- */
+let SAMPLE;
+async function getAI(){if(SAMPLE!==undefined)return SAMPLE;try{const r=await timeout(fetch('/api/health'),8000);const j=await r.json();SAMPLE=j.ai?true:null}catch(e){SAMPLE=null}return SAMPLE}
+async function imgOK(){return true}
+function parseJSON(t){t=String(t||'').trim().replace(/^```(?:json)?\s*/i,'').replace(/```\s*$/,'');try{return JSON.parse(t)}catch(e){}const a=t.indexOf('{'),b=t.lastIndexOf('}');if(a>=0&&b>a){try{return JSON.parse(t.slice(a,b+1))}catch(e){}}throw{code:'bad_json',message:'The AI reply could not be read. Please try again.'}}
+const toB64=b=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(b)});
+async function askText(input,onText,opts={}){
+  if(!(await getAI()))throw{code:'no_ai'};
+  const messages=typeof input==='string'?[{role:'user',content:input}]:input;
+  const images=opts.images?await Promise.all(opts.images.map(async b=>({media_type:b.type||'image/jpeg',data:await toB64(b)}))):[];
+  const r=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages,images,tier:opts.modelTier||'default'})});
+  if(!r.ok){let j={};try{j=await r.json()}catch(e){}throw{code:j.code,message:j.message||('AI request failed ('+r.status+')')}}
+  const rd=r.body.getReader(),dec=new TextDecoder();let text='';
+  for(;;){const {value,done}=await rd.read();if(done)break;text+=dec.decode(value,{stream:true});onText&&onText(text)}
+  return text;
+}
+async function askJSON(prompt,opts={}){const t=await askText(prompt+'\n\nReply with ONLY valid JSON. No prose, no code fences.',null,opts);return parseJSON(t)}
+function aiErr(e){const c=e?.code;if(c==='no_ai'||c==='no_key')return'AI is off: add your ANTHROPIC_API_KEY to the .env file and restart the server.';if(c==='rate_limited')return'Too many AI requests right now. Wait a minute and try again.';return e?.message||String(e||'Something went wrong. Try again.')}
+
+/* ---------- file reading ---------- */
+const CDN='https://cdn.jsdelivr.net/npm/';const loaded={};
+function loadScript(src){return loaded[src]||(loaded[src]=new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=()=>{delete loaded[src];rej(new Error('Could not load the reader for this file type.'))};document.head.appendChild(s)}))}
+async function pdfLib(){const w=CDN+'pdfjs-dist@3.11.174/build/pdf.worker.min.js';await loadScript(w);await loadScript(CDN+'pdfjs-dist@3.11.174/build/pdf.min.js');window.pdfjsLib.GlobalWorkerOptions.workerSrc=w;return window.pdfjsLib}
+function decodeXml(s){const t=document.createElement('textarea');t.innerHTML=s;return t.value}
+async function shrink(blob,max=1600){const img=await createImageBitmap(blob);const k=Math.min(1,max/Math.max(img.width,img.height));const c=document.createElement('canvas');c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);c.getContext('2d').drawImage(img,0,0,c.width,c.height);return new Promise(r=>c.toBlob(r,'image/jpeg',.85))}
+async function readFile(file){
+  const ext=file.name.toLowerCase().split('.').pop();
+  if(/^(txt|md|csv|json|tex|html?|py|java|c|cpp|js|m|r|sql)$/.test(ext))return{text:await file.text(),images:[]};
+  if(file.type.startsWith('image/'))return{text:'',images:[await shrink(file)]};
+  if(ext==='pdf'){
+    const L=await pdfLib();const doc=await L.getDocument({data:new Uint8Array(await file.arrayBuffer()),isEvalSupported:false}).promise;let out='';
+    for(let i=1;i<=doc.numPages;i++){const p=await doc.getPage(i);const c=await p.getTextContent();out+='\n\n[Page '+i+']\n'+c.items.map(it=>it.str+(it.hasEOL?'\n':' ')).join('')}
+    const images=[];const real=out.replace(/\[Page \d+\]|\s/g,'').length;
+    if(real<60*Math.min(doc.numPages,4)){for(let i=1;i<=Math.min(doc.numPages,8);i++){const p=await doc.getPage(i);const vp=p.getViewport({scale:1.5});const cv=document.createElement('canvas');cv.width=vp.width;cv.height=vp.height;await p.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;images.push(await new Promise(r=>cv.toBlob(r,'image/jpeg',.82)))}return{text:'',images}}
+    return{text:out.trim(),images};
+  }
+  if(ext==='docx'){await loadScript(CDN+'mammoth@1.6.0/mammoth.browser.min.js');const r=await window.mammoth.extractRawText({arrayBuffer:await file.arrayBuffer()});return{text:r.value,images:[]}}
+  if(ext==='pptx'){await loadScript(CDN+'jszip@3.10.1/dist/jszip.min.js');const z=await window.JSZip.loadAsync(await file.arrayBuffer());const ks=Object.keys(z.files).filter(k=>/^ppt\/slides\/slide\d+\.xml$/.test(k)).sort((a,b)=>+a.match(/\d+/)[0]-+b.match(/\d+/)[0]);let out='';for(const [i,k] of ks.entries()){const x=await z.file(k).async('string');out+='\n\n[Slide '+(i+1)+']\n'+decodeXml(x.replace(/<\/a:p>/g,'\n').replace(/<[^>]+>/g,''))}return{text:out.trim(),images:[]}}
+  if(ext==='xlsx'||ext==='xls'){await loadScript(CDN+'xlsx@0.18.5/dist/xlsx.full.min.js');const wb=window.XLSX.read(await file.arrayBuffer());return{text:wb.SheetNames.map(n=>'[Sheet '+n+']\n'+window.XLSX.utils.sheet_to_csv(wb.Sheets[n])).join('\n\n'),images:[]}}
+  throw new Error('This file type is not supported. Save it as PDF, DOCX or PPTX and add it again.');
+}
+
+/* ---------- markdown + math ---------- */
+function md(src){
+  if(!src)return'';const maths=[];
+  let s=String(src).replace(/\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$([^\s$](?:[^$\n]*?[^\s$])?)\$/g,m=>{maths.push(m);return'@@M'+(maths.length-1)+'@@'});
+  let h=window.marked?window.marked.parse(s):esc(s).replace(/\n/g,'<br>');
+  h=h.replace(/@@M(\d+)@@/g,(_,i)=>esc(maths[+i]));
+  return window.DOMPurify?window.DOMPurify.sanitize(h,{ADD_TAGS:['details','summary']}):h;
+}
+function typeset(el){try{if(window.MathJax?.typesetPromise)window.MathJax.typesetPromise([el||document.body]).catch(()=>{})}catch(e){}}
+
+/* ---------- helpers ---------- */
+function toast(msg,kind){const d=document.createElement('div');d.className='toast '+(kind||'');d.textContent=msg;$('#toasts').appendChild(d);setTimeout(()=>d.remove(),5200)}
+const course=id=>S.courses.find(c=>c.id===id);
+const matsOf=id=>S.materials.filter(m=>m.courseId===id).sort((a,b)=>a.addedAt-b.addedAt);
+const sheetsOf=id=>S.sheets.filter(m=>m.courseId===id);
+const quizOf=id=>S.quizzes.filter(q=>q.courseId===id).sort((a,b)=>a.date-b.date);
+const asgOf=id=>S.assignments.filter(a=>a.courseId===id).sort((a,b)=>b.addedAt-a.addedAt);
+const planTasks=()=>(S.meta.plan?.days||[]).flatMap(d=>d.tasks.map(t=>({...t,date:d.date,_t:t})));
+function courseStats(c){
+  const ms=matsOf(c.id).filter(m=>m.summary);const studied=ms.filter(m=>m.studied).length;
+  const qs=quizOf(c.id);const last=qs.slice(-3);const qavg=last.length?last.reduce((a,q)=>a+q.pct,0)/last.length:0;
+  const tasks=planTasks().filter(t=>t.courseId===c.id);const done=tasks.filter(t=>t.done).length;
+  const mat=ms.length?studied/ms.length*100:0,plan=tasks.length?done/tasks.length*100:0;
+  const asg=asgOf(c.id);
+  return{mat,qavg,plan,ready:pct(.35*mat+.45*qavg+.2*plan),studied,total:ms.length,quizzes:qs.length,asgDone:asg.filter(a=>a.solution).length,asgTotal:asg.length};
+}
+function weakTopics(cid){const m={};quizOf(cid).slice(-10).forEach(q=>(q.weak||[]).forEach(t=>m[t]=(m[t]||0)+1));return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,6).map(x=>x[0])}
+function streak(){const a=new Set(S.meta.activity||[]);let n=0,d=todayISO();if(!a.has(d))d=addDays(d,-1);while(a.has(d)){n++;d=addDays(d,-1)}return n}
+function autoTick(type,cid,ref){
+  const tasks=(S.meta.plan?.days||[]).flatMap(d=>d.tasks.map(t=>({t,date:d.date})));
+  const hit=tasks.filter(x=>x.t.courseId===cid&&x.t.type===type&&!x.t.done&&(ref?x.t.ref===ref:true)).sort((a,b)=>a.date<b.date?-1:1)[0];
+  if(hit){hit.t.done=true;hit.t.doneAt=todayISO();saveMeta()}
+}
+function confirmBox(msg,yes='Delete'){return new Promise(res=>{const r=$('#modalRoot');r.innerHTML=`<div class="modal"><div class="glass"><h3>${esc(msg)}</h3><div class="row" style="justify-content:flex-end"><button class="btn ghost" id="cNo">Cancel</button><button class="btn pri" id="cYes">${esc(yes)}</button></div></div></div>`;$('#cNo').onclick=()=>{r.innerHTML='';res(false)};$('#cYes').onclick=()=>{r.innerHTML='';res(true)}})}
+
+/* ---------- AI tasks ---------- */
+async function summarize(c,name,text,images,onStage){
+  let src=text;
+  if(text.length>42000){const parts=[];for(let i=0;i<text.length;i+=36000)parts.push(text.slice(i,i+36000));const notes=[];
+    for(const [k,p] of parts.entries()){onStage&&onStage('Reading part '+(k+1)+' of '+parts.length+'…');notes.push(await askText(`You are condensing part ${k+1} of ${parts.length} of a lecture file for the college course "${c.name}". Write dense study notes (max 450 words). Keep every definition, formula, rule, process and example type. Use $...$ for math.\nSource:\n"""${p}"""`))}
+    src=notes.join('\n\n');}
+  onStage&&onStage('Writing your summary…');
+  const ok=images.length&&await imgOK();
+  return askJSON(`You are a friendly expert tutor for the college course "${c.name}". Summarize this lecture material ("${name}") for a student preparing for quizzes and the final exam.
+Write in simple, clear English: short sentences, everyday words, no fluff. Explain so a beginner truly understands, using a quick example where it helps. Use $...$ for inline math and $$...$$ for display math.
+Return JSON with exactly these keys:
+{"title": short topic title, "oneLine": one sentence on what this lecture is about, "summary": markdown of 150-320 words with short headings or bullets explaining the ideas, "keyPoints": 5-8 short strings the student must remember, "terms": up to 8 objects {"term","def"} with one-line definitions, "formulas": important formulas or rules as strings (may be empty), "examTips": up to 4 strings on what is likely to be asked and common mistakes, "topics": 2-6 short topic tags}
+${text.trim()?`Material:\n"""${src.slice(0,46000)}"""`:'The material is given as page images.'}`,ok?{images:images.slice(0,8)}:{});
+}
+async function analyzeSheet(c,name,text,images){
+  const ok=images.length&&await imgOK();
+  return askJSON(`Analyze this question sheet / past exam / quiz ("${name}") from the college course "${c.name}". Work out the kind and level of questions the student must practice for.
+Return JSON: {"questionTypes": array of {"type": one of "mcq","tf","short","problem", "share": percent number}, "difficulty": "easy"|"medium"|"hard", "level": one sentence on the level (e.g. "2nd-year undergrad, calculation-heavy"), "style": 1-2 sentences on how questions are phrased and what answers need, "topics": up to 8 topics covered, "examples": 3 representative questions copied or closely paraphrased from the sheet (use $...$ for math), "count": approximate number of questions}
+${text.trim()?`Sheet:\n"""${text.slice(0,30000)}"""`:'The sheet is given as images.'}`,ok?{images:images.slice(0,8)}:{});
+}
+async function genQuiz(c,{n,diff,scope,focus,types}){
+  const mats=matsOf(c.id).filter(m=>m.summary&&(!scope||scope.includes(m.id)));
+  const sheets=sheetsOf(c.id).filter(s=>s.profile);
+  const per=Math.floor(26000/Math.max(1,mats.length));
+  const notes=mats.map(m=>`## ${m.summary.title}\n${m.summary.summary}\nKey points: ${(m.summary.keyPoints||[]).join('; ')}\nFormulas: ${(m.summary.formulas||[]).join('; ')}\nSource excerpt: ${(m.text||'').slice(0,per)}`).join('\n\n')||sheets.map(s=>s.text||'').join('\n\n').slice(0,26000);
+  const prof=sheets.map(s=>JSON.stringify(s.profile)).join('\n');
+  const typeLine=types&&types.length?`Use only these question types: ${types.join(', ')}.`:'';
+  const r=await askJSON(`Write a practice test of exactly ${n} questions for the college course "${c.name}".
+${prof?`Match the TYPE, STYLE and LEVEL of the student's real question sheets, profiled here:\n${prof}`:'Use a typical university exam mix: mostly multiple choice, plus some true/false, short-answer and worked problems.'}
+${typeLine}
+Difficulty: ${diff==='easier'?'a little easier than the real sheets, to build confidence':diff==='harder'?'harder than the real sheets, exam-challenge level':'the same as the real sheets'}.
+${focus?`Focus especially on these weak topics: ${focus}.`:''}
+Base every question on this course material:
+"""${notes}"""
+Return JSON: {"questions":[{"type":"mcq"|"tf"|"short"|"problem","question": markdown (use $...$ for math),"options": 4 strings (mcq only),"answer": for mcq the 0-based index of the correct option; for tf true or false; for short/problem a complete model answer (problems show the worked steps),"explanation": 1-3 sentences on why,"topic": short topic tag}]}
+Spread the correct option position across A-D. Never ask about the file's formatting.`);
+  const qs=(r.questions||[]).filter(q=>q&&q.question).map(q=>{const t=['mcq','tf','short','problem'].includes(q.type)?q.type:'short';if(t==='mcq'&&(!Array.isArray(q.options)||q.options.length<2))return{...q,type:'short',answer:String(q.answer)};if(t==='tf')q.answer=q.answer===true||String(q.answer).toLowerCase()==='true';if(t==='mcq')q.answer=Math.max(0,Math.min(q.options.length-1,parseInt(q.answer,10)||0));return{...q,type:t}});
+  if(!qs.length)throw{message:'No questions came back. Try again.'};return qs;
+}
+async function gradeOpen(c,items){const r=await askJSON(`You are grading a student's answers in the college course "${c.name}". Be fair and kind: give partial credit for a correct method even with a small slip. For each item give "score" from 0 to 1 (0, 0.25, 0.5, 0.75 or 1) and "feedback": 1-2 specific sentences on what was right and what was missing.
+Items: ${JSON.stringify(items)}
+Return JSON: {"grades":[{"i":number,"score":number,"feedback":string}]}`);return r.grades||[]}
+function courseContext(c){return matsOf(c.id).filter(m=>m.summary).map(m=>`- ${m.summary.title}: ${(m.summary.keyPoints||[]).slice(0,5).join('; ')}`).join('\n').slice(0,6000)}
+function solvePrompt(c,text){return`You are a patient expert tutor for the college course "${c.name}". Solve this assignment completely AND teach it, so the student understands every step and could solve a similar one alone.
+For EACH question, use this layout:
+### Question N: short restatement
+**What it asks:** one or two plain sentences.
+**Key idea:** the concept, rule or formula needed and why it applies.
+**Step-by-step solution:** numbered steps. Each step shows the work and one plain sentence saying why.
+**Final answer:** clearly stated.
+**Check yourself:** one quick similar question, with its answer inside <details><summary>Show answer</summary>...</details>
+Use simple language. Use $...$ inline and $$...$$ display math. If something is ambiguous, state your assumption.
+${courseContext(c)?'What the course covers so far (match its notation):\n'+courseContext(c):''}
+Assignment:
+"""${text.slice(0,40000)}"""`}
+
+/* ---------- plan ---------- */
+function genPlan(){
+  const start=todayISO();
+  let end=S.meta.planEnd&&daysUntil(S.meta.planEnd)>0?S.meta.planEnd:addDays(start,27);
+  const H=Math.max(1,Math.min(29,daysUntil(end)));
+  const old=new Map(planTasks().map(t=>[t.key,t]));
+  const days=Array.from({length:H+1},(_,i)=>({date:addDays(start,i),tasks:[]}));
+  for(const c of S.courses){
+    let last=H;const ex=daysUntil(c.examDate);if(ex!==null&&ex>=0)last=Math.max(0,Math.min(H,ex-1));
+    const q=[];const ms=matsOf(c.id).filter(m=>m.summary);
+    if(!ms.length)q.push({type:'upload',label:'Add lecture files for '+c.name,mins:15});
+    ms.forEach((m,i)=>{q.push({type:'study',ref:m.id,label:'Study: '+m.summary.title,mins:40});if(i%2===1||i===ms.length-1)q.push({type:'quiz',ref:'q'+i,label:'Practice test: '+ms.slice(Math.max(0,i-1),i+1).map(x=>x.summary.title).join(' + '),scope:ms.slice(Math.max(0,i-1),i+1).map(x=>x.id),mins:25})});
+    asgOf(c.id).filter(a=>!a.understood).forEach(a=>q.push({type:'assign',ref:a.id,label:'Work through: '+a.name,mins:45}));
+    if(ms.length){q.push({type:'weak',ref:'w',label:'Drill weak topics',mins:30});q.push({type:'review',ref:'r',label:'Re-read all summaries and key terms',mins:40});q.push({type:'mock',ref:'m',label:'Full mock exam',mins:60})}
+    q.forEach((t,k)=>{const d=q.length===1?0:Math.round(k*last/(q.length-1));t.courseId=c.id;t.key=c.id+':'+t.type+':'+(t.ref||k);t.id=uid();const o=old.get(t.key);if(o){t.done=o.done;t.doneAt=o.doneAt}days[d].tasks.push(t)});
+  }
+  S.meta.plan={created:Date.now(),start,end,days};S.meta.planEnd=end;saveMeta();
+}
+
+/* ---------- demo content shown before the first course ---------- */
+function loadDemo(){
+  const cid='demo1';const t=todayISO();
+  S.courses.push({id:cid,kind:'course',demo:true,name:'Example: Calculus I',color:COLORS[0],examDate:addDays(t,24),addedAt:Date.now()});
+  const sm=(title,one,kp,topics)=>({title,oneLine:one,summary:`**Big idea.** ${one}\n\n- Work through one small example before memorising rules.\n- Write each rule in your own words.`,keyPoints:kp,terms:[{term:'Limit',def:'The value a function approaches as $x$ gets close to a point.'},{term:'Derivative',def:"The instant rate of change, $f'(x)$."}],formulas:['$\\frac{d}{dx}x^n = nx^{n-1}$'],examTips:['Show every step; partial credit is common.'],topics});
+  [['Limits and continuity','How a function behaves near a point, and when it has no jumps.',['A limit can exist even if f(a) does not','Continuity needs three conditions'],['limits']],['Derivatives','The derivative measures how fast a function changes.',['Power rule','Product and quotient rules'],['derivatives']],['Chain rule','How to differentiate a function inside another function.',['Outside derivative times inside derivative'],['chain rule']]].forEach((x,i)=>S.materials.push({id:'dm'+i,kind:'material',demo:true,courseId:cid,name:x[0]+'.pdf',addedAt:Date.now()+i,status:'ready',studied:i<2,summary:sm(...x)}));
+  [62,71,80].forEach((p,i)=>S.quizzes.push({id:'dq'+i,kind:'quiz',demo:true,courseId:cid,date:Date.now()-(3-i)*DAY,day:addDays(t,i-3),n:10,pct:p,weak:i<2?['chain rule']:[],label:'Practice test'}));
+}
+function clearDemo(){for(const k of Object.values(KIND))S[k]=S[k].filter(e=>!e.demo);if(S.meta.plan?.demo){S.meta.plan=null}}
+const hasDemo=()=>S.courses.some(c=>c.demo);
+
+/* ---------- render ---------- */
+const route=()=>{const h=location.hash.slice(1);if(h.startsWith('c-')&&course(h.slice(2)))return{v:'course',id:h.slice(2)};if(h==='plan')return{v:'plan'};return{v:'dash'}};
+function render(){
+  const a=document.activeElement,aid=a&&a.id,sel=a&&'selectionStart' in a?[a.selectionStart,a.selectionEnd]:null;
+  const r=route();
+  $('#side').innerHTML=sideHTML(r);
+  const m=$('#main');
+  m.innerHTML=(SAMPLE===null?`<div class="banner"><b>AI is off.</b><span class="small">Add your ANTHROPIC_API_KEY to the .env file and restart the server (npm start). Your progress still saves.</span></div>`:'')+(r.v==='course'?courseHTML(course(r.id)):r.v==='plan'?planHTML():dashHTML());
+  if(aid){const el=document.getElementById(aid);if(el){el.focus();if(sel&&el.setSelectionRange)try{el.setSelectionRange(...sel)}catch(e){}}}
+  typeset(m);
+}
+function sideHTML(r){
+  const cs=S.courses.map(c=>{const d=daysUntil(c.examDate);return`<a class="nav ${r.v==='course'&&r.id===c.id?'on':''}" href="#c-${c.id}"><span class="dot" style="background:${c.color}"></span>${esc(c.name)}${d!==null&&d>=0?`<small>${d}d</small>`:''}</a>`}).join('');
+  return`<div class="brand"><svg width="30" height="30" viewBox="0 0 30 30"><rect x="3" y="5" width="18" height="22" rx="5" fill="#0e9a97" opacity=".85"/><rect x="9" y="3" width="18" height="22" rx="5" fill="#ff8d6e" opacity=".75"/><path d="M13 14l3 3 6-7" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Study Hub</span></div>
+  <a class="nav ${r.v==='dash'?'on':''}" href="#dashboard">Dashboard</a>
+  <a class="nav ${r.v==='plan'?'on':''}" href="#plan">Study plan</a>
+  <div class="navlabel">Courses</div>${cs}
+  <button class="nav" data-act="addCourse" style="background:none;cursor:pointer;color:var(--teal);font-weight:600">+ Add course</button>
+  <div class="sidefoot">${MODE==='server'?'Saved to data/db.json':'Server offline: saved in this browser'}</div>`;
+}
+function ringSVG(v){const R=86,C=2*Math.PI*R;return`<svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="${R}" fill="none" stroke="var(--hair)" stroke-width="16"/><circle cx="100" cy="100" r="${R}" fill="none" stroke="url(#rg)" stroke-width="16" stroke-linecap="round" stroke-dasharray="${C*v/100} ${C}"/><defs><linearGradient id="rg" x1="0" x2="1"><stop offset="0" stop-color="#0e9a97"/><stop offset="1" stop-color="#ff8d6e"/></linearGradient></defs></svg>`}
+function taskRow(t){const c=course(t.courseId);if(!c)return'';return`<div class="task ${t.done?'done':''}"><input type="checkbox" data-act="tick" data-id="${t.id}" ${t.done?'checked':''} aria-label="Done"><div class="t"><span>${esc(t.label)}</span><div class="small mute"><span class="cdot" style="background:${c.color}"></span>${esc(c.name)} · ${t.mins} min</div></div>${t.type!=='upload'?`<button class="btn sm ghost go" data-act="doTask" data-id="${t.id}">Open</button>`:`<a class="btn sm ghost go" href="#c-${c.id}">Open</a>`}</div>`}
+function dashHTML(){
+  if(!S.courses.length)return`<section class="glass pane empty"><svg width="120" height="90" viewBox="0 0 120 90"><rect x="10" y="18" width="64" height="62" rx="14" fill="#0e9a97" opacity=".8"/><rect x="34" y="8" width="64" height="62" rx="14" fill="#ff8d6e" opacity=".7"/><rect x="52" y="26" width="58" height="56" rx="14" fill="#f6c453" opacity=".75"/><path d="M68 54l8 8 16-18" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg><h1>Your study hub</h1><p class="mute" style="max-width:560px">Add a course, drop in your lecture files and question sheets, and get short summaries, practice tests that match your real exams, step-by-step assignment help and a plan to finish everything in under a month.</p><div class="steps3"><div><b>1. Add a course</b>Name and final exam date.</div><div><b>2. Drop your files</b>Lectures get summarized; sheets set the test style.</div><div><b>3. Follow the plan</b>Daily tasks, tests and progress.</div></div><div class="row" style="justify-content:center"><button class="btn pri" data-act="addCourse">Add your first course</button><button class="btn" data-act="demo">See an example</button></div></section>`;
+  const st=S.courses.map(c=>({c,...courseStats(c)}));
+  const ready=pct(st.reduce((a,x)=>a+x.ready,0)/st.length);
+  const tasks=planTasks();const t=todayISO();
+  const today=tasks.filter(x=>x.date===t);const overdue=tasks.filter(x=>x.date<t&&!x.done);
+  const planPct=tasks.length?pct(tasks.filter(x=>x.done).length/tasks.length*100):0;
+  const next=S.courses.filter(c=>daysUntil(c.examDate)>=0).sort((a,b)=>daysUntil(a.examDate)-daysUntil(b.examDate))[0];
+  const qs=S.quizzes.slice().sort((a,b)=>a.date-b.date);const avg=qs.length?pct(qs.slice(-5).reduce((a,q)=>a+q.pct,0)/Math.min(5,qs.length)):null;
+  const hr=new Date().getHours();const greet=hr<12?'Good morning':hr<18?'Good afternoon':'Good evening';
+  const todayMins=today.filter(x=>!x.done).reduce((a,x)=>a+x.mins,0);
+  return`${hasDemo()?`<div class="banner"><b>This is an example course.</b><span class="small">Look around, then add your own course and the example disappears.</span><button class="btn sm pri" data-act="addCourse">Add my course</button></div>`:''}
+  <section class="glass pane grid g2">
+    <div class="hero"><div class="ring">${ringSVG(ready)}<div class="lbl"><b>${ready}%</b><span>exam ready</span></div></div>
+      <div style="display:grid;gap:14px"><div><p class="mute small">${greet} · ${fmtD(t)}</p><h1>${ready>=80?'You are nearly exam ready':ready>=40?'Good progress, keep going':'Let’s get you exam ready'}</h1></div>
+      <div class="kv"><div class="stat"><b>${next?daysUntil(next.examDate)+' days':'—'}</b><span>${next?'to '+esc(next.name):'no exam date set'}</span></div><div class="stat"><b>${planPct}%</b><span>of plan done</span></div><div class="stat"><b>${avg===null?'—':avg+'%'}</b><span>recent test average</span></div><div class="stat"><b>${streak()}</b><span>day streak</span></div></div></div></div>
+    <div><div class="row between" style="margin-bottom:6px"><h2>Today</h2><span class="small mute">${todayMins?todayMins+' min left':''}</span></div>
+      ${!S.meta.plan?`<p class="mute small" style="margin:8px 0 14px">You have no plan yet. Build one from your courses and exam dates.</p><button class="btn pri" data-act="makePlan">Build my study plan</button>`:(today.length?today.map(taskRow).join(''):'<p class="mute small">Nothing scheduled today. Take a practice test or rest.</p>')+(overdue.length?`<p class="small" style="margin-top:12px;color:var(--coral)">${overdue.length} earlier task${overdue.length>1?'s':''} not done yet. <a href="#plan" style="color:inherit">Catch up</a></p>`:'')}
+    </div>
+  </section>
+  <section class="grid g3">${st.map(x=>`<a class="glass ccard" href="#c-${x.c.id}"><div class="row between"><h3><span class="cdot" style="background:${x.c.color}"></span>${esc(x.c.name)}</h3><span class="chip">${x.ready}% ready</span></div>
+    <div class="small mute">${x.c.examDate?'Final '+fmtD(x.c.examDate)+(daysUntil(x.c.examDate)>=0?' · '+daysUntil(x.c.examDate)+' days left':' · passed'):'No exam date'}</div>
+    ${[['Lectures',x.mat,x.total?x.studied+'/'+x.total:'0'],['Test average',x.qavg,x.quizzes?pct(x.qavg)+'%':'—'],['Plan tasks',x.plan,pct(x.plan)+'%']].map(r=>`<div class="mrow"><span class="mute">${r[0]}</span><div class="bar"><i style="width:${pct(r[1])}%;background:${x.c.color}"></i></div><em>${r[2]}</em></div>`).join('')}
+    ${weakTopics(x.c.id).length?`<div class="small"><span class="mute">Weak:</span> ${weakTopics(x.c.id).slice(0,3).map(w=>`<span class="chip coral">${esc(w)}</span>`).join(' ')}</div>`:''}</a>`).join('')}</section>
+  <section class="glass pane"><div class="row between"><h2>${qs.length?'Test scores over time':'Test scores'}</h2><span class="small mute">last ${Math.min(14,qs.length)} tests</span></div>
+    ${qs.length?`<div class="chart">${qs.slice(-14).map(q=>{const c=course(q.courseId);return`<div class="c" title="${esc(c?.name||'')}: ${q.pct}%"><span>${q.pct}</span><i style="height:${Math.max(3,q.pct)}%;background:${c?.color||'var(--teal)'}"></i></div>`}).join('')}</div><div class="row small mute" style="margin-top:10px">${S.courses.map(c=>`<span><span class="cdot" style="background:${c.color}"></span>${esc(c.name)}</span>`).join('')}</div>`:'<p class="mute small" style="margin-top:8px">Take your first practice test inside a course to see your scores here.</p>'}
+  </section>`;
+}
+function planHTML(){
+  const p=S.meta.plan;const t=todayISO();const end=S.meta.planEnd&&daysUntil(S.meta.planEnd)>=3?S.meta.planEnd:addDays(t,27);
+  const tasks=planTasks();const done=tasks.filter(x=>x.done).length;const lim=(S.meta.hours||3)*60;
+  const head=`<section class="glass pane grid" style="gap:16px"><div class="row between"><div><h1>Study plan</h1><p class="mute">Every course finished before its exam, inside ${Math.min(29,daysUntil(end))+1} days.</p></div>${p?`<div style="min-width:220px"><div class="row between small"><span>${done} of ${tasks.length} tasks</span><b>${tasks.length?pct(done/tasks.length*100):0}%</b></div><div class="bar" style="margin-top:6px"><i style="width:${tasks.length?pct(done/tasks.length*100):0}%"></i></div></div>`:''}</div>
+  <div class="row" style="align-items:flex-end"><label class="f" style="width:200px">Finish everything by<input type="date" id="planEnd" value="${end}" min="${addDays(t,3)}" max="${addDays(t,29)}"></label><label class="f" style="width:170px">Hours per day<select id="planHours">${[1,2,3,4,5,6,8].map(h=>`<option ${h==(S.meta.hours||3)?'selected':''}>${h}</option>`).join('')}</select></label><button class="btn pri" data-act="makePlan">${p?'Rebuild plan':'Build my plan'}</button></div>
+  <p class="small mute">Each lecture becomes a study session, followed by a practice test every two lectures, then assignments, weak-topic drills, a full review and a mock exam before each final. Rebuilding keeps what you have already ticked.</p></section>`;
+  if(!S.courses.length)return head+`<section class="glass pane empty"><p>Add a course first.</p><button class="btn pri" data-act="addCourse">Add course</button></section>`;
+  if(!p)return head;
+  return head+`<section class="grid g3">${p.days.map(d=>{const m=d.tasks.reduce((a,x)=>a+x.mins,0);return`<div class="glass day ${d.date===t?'today':''} ${d.date<t?'past':''}"><div class="row between"><h3>${d.date===t?'Today':fmtD(d.date)}</h3><span class="small ${m>lim?'':'mute'}" style="${m>lim?'color:var(--coral)':''}">${m?m+' min':'Rest / catch up'}</span></div>${d.tasks.map(x=>taskRow(x)).join('')}</div>`}).join('')}</section>`;
+}
+function courseHTML(c){
+  const tab=ui.tab[c.id]||'sum';const st=courseStats(c);const d=daysUntil(c.examDate);
+  return`<section class="glass pane grid" style="gap:16px"><div class="row between"><div><p class="small mute"><span class="cdot" style="background:${c.color}"></span>${c.examDate?'Final exam '+fmtD(c.examDate)+(d>=0?' · '+d+' days left':' · passed'):'No exam date yet'}</p><h1>${esc(c.name)}</h1></div><div class="row">${c.demo?'':`<button class="btn sm ghost" data-act="editCourse" data-id="${c.id}">Edit</button><button class="btn sm ghost danger" data-act="delCourse" data-id="${c.id}">Delete</button>`}</div></div>
+  <div class="kv"><div class="stat"><b>${st.ready}%</b><span>exam ready</span></div><div class="stat"><b>${st.studied}/${st.total}</b><span>lectures understood</span></div><div class="stat"><b>${st.quizzes?pct(st.qavg)+'%':'—'}</b><span>test average (last 3)</span></div><div class="stat"><b>${st.asgDone}</b><span>assignments solved</span></div></div></section>
+  <nav class="glass tabs">${[['sum','Summaries'],['prac','Practice tests'],['asg','Assignments']].map(x=>`<button class="tab ${tab===x[0]?'on':''}" data-act="tab" data-id="${c.id}" data-tab="${x[0]}">${x[1]}</button>`).join('')}</nav>
+  ${tab==='sum'?sumHTML(c):tab==='prac'?pracHTML(c):asgHTML(c)}`;
+}
+function statusHTML(e){if(e.status==='ready')return'';if(e.status==='error')return`<div class="status" style="color:var(--bad)">${esc(e.error||'Failed')}<button class="btn sm" data-act="retry" data-kind="${e.kind}" data-id="${e.id}">Retry</button><button class="btn sm ghost" data-act="delItem" data-kind="${e.kind}" data-id="${e.id}">Remove</button></div>`;return`<div class="status"><div class="spin"></div>${esc(e.stage||'Working…')}</div>`}
+function sumHTML(c){
+  const ms=matsOf(c.id);
+  return`<section class="glass pane grid" style="gap:14px"><div class="drop" data-drop="material" data-id="${c.id}" tabindex="0" role="button"><b>Add lecture files</b><span class="small mute">PDF, Word, PowerPoint, text or photos. Each one becomes a short, simple summary.</span></div></section>
+  ${ms.length?ms.map(m=>{const s=m.summary;if(!s)return`<div class="glass pane"><h3>${esc(m.name)}</h3>${statusHTML(m)}</div>`;return`<details class="glass mat" ${ui.openMat===m.id?'open':''} data-mat="${m.id}"><summary><input type="checkbox" data-act="studied" data-id="${m.id}" ${m.studied?'checked':''} aria-label="Understood" style="width:22px;height:22px;accent-color:var(--teal);margin-top:4px;flex:none"><div style="flex:1"><h3>${esc(s.title)}</h3><p class="small mute">${esc(s.oneLine)}</p><div class="row" style="margin-top:8px;gap:6px">${(s.topics||[]).map(t=>`<span class="chip">${esc(t)}</span>`).join('')}${m.studied?'<span class="chip sun">Understood</span>':''}</div></div></summary>
+    <div class="body"><div class="md">${md(s.summary)}</div>
+    ${(s.keyPoints||[]).length?`<div><h3 style="margin-bottom:8px">Remember</h3><ul class="md" style="margin:0">${s.keyPoints.map(k=>`<li>${md(k).replace(/^<p>|<\/p>\s*$/g,'')}</li>`).join('')}</ul></div>`:''}
+    ${(s.formulas||[]).length?`<div><h3 style="margin-bottom:8px">Formulas and rules</h3><div class="md">${s.formulas.map(f=>`<p>${md(f).replace(/^<p>|<\/p>\s*$/g,'')}</p>`).join('')}</div></div>`:''}
+    ${(s.terms||[]).length?`<div><h3 style="margin-bottom:8px">Key terms</h3><div class="terms">${s.terms.map(t=>`<div class="term md"><b>${esc(t.term)}</b>${md(t.def).replace(/^<p>|<\/p>\s*$/g,'')}</div>`).join('')}</div></div>`:''}
+    ${(s.examTips||[]).length?`<div class="banner" style="display:block"><b>Exam tips</b><ul class="md" style="margin:6px 0 0">${s.examTips.map(k=>`<li>${md(k).replace(/^<p>|<\/p>\s*$/g,'')}</li>`).join('')}</ul></div>`:''}
+    <div class="row"><button class="btn ${m.studied?'':'pri'}" data-act="studied" data-id="${m.id}">${m.studied?'Mark as not yet understood':'I understand this'}</button><button class="btn" data-act="quizMat" data-id="${m.id}">Test me on this</button>${m.demo?'':`<button class="btn ghost danger" data-act="delItem" data-kind="material" data-id="${m.id}">Delete</button>`}<span class="small mute">${esc(m.name)}</span></div></div></details>`}).join(''):`<div class="glass pane mute">No lectures yet. Drop your first file above.</div>`}`;
+}
+function pracHTML(c){
+  if(ui.run&&ui.run.cid===c.id)return runHTML(c);
+  const sh=sheetsOf(c.id);const ms=matsOf(c.id).filter(m=>m.summary);const b=ui.builder[c.id]||(ui.builder[c.id]={n:10,diff:'match',scope:null,types:[]});
+  const qs=quizOf(c.id).slice().reverse();const weak=weakTopics(c.id);
+  return`<section class="grid g2">
+  <div class="glass pane grid" style="gap:14px;align-content:start"><h2>Your question sheets</h2><p class="small mute">Add past exams, quizzes or problem sheets. Each test is written to match their question types and level.</p>
+    <div class="drop" data-drop="sheet" data-id="${c.id}" tabindex="0" role="button"><b>Add question sheets</b><span class="small mute">PDF, Word, Excel, text or photos</span></div>
+    ${sh.map(s=>`<div class="rev">${s.profile?`<div class="row between"><b>${esc(s.name)}</b><button class="btn sm ghost danger" data-act="delItem" data-kind="sheet" data-id="${s.id}">Remove</button></div><div class="row" style="gap:6px"><span class="chip sun">${esc(s.profile.difficulty||'')}</span>${(s.profile.questionTypes||[]).map(q=>`<span class="chip">${esc(({mcq:'Multiple choice',tf:'True/false',short:'Short answer',problem:'Problems'})[q.type]||q.type)} ${q.share?Math.round(q.share)+'%':''}</span>`).join('')}</div><p class="small">${esc(s.profile.level||'')} ${esc(s.profile.style||'')}</p>`:`<b>${esc(s.name)}</b>${statusHTML(s)}`}</div>`).join('')}
+  </div>
+  <div class="glass pane grid" style="gap:16px;align-content:start"><h2>Build a test</h2>
+    <div class="f" style="font-weight:600;font-size:14px">Questions<div class="seg" style="margin-top:6px">${[5,10,15,20,30].map(n=>`<button data-act="bset" data-id="${c.id}" data-k="n" data-v="${n}" class="${b.n==n?'on':''}">${n}</button>`).join('')}</div></div>
+    <div class="f" style="font-weight:600;font-size:14px">Difficulty<div class="seg" style="margin-top:6px">${[['easier','Easier'],['match',sh.length?'Like my sheets':'Normal'],['harder','Harder']].map(x=>`<button data-act="bset" data-id="${c.id}" data-k="diff" data-v="${x[0]}" class="${b.diff===x[0]?'on':''}">${x[1]}</button>`).join('')}</div></div>
+    <div class="f" style="font-weight:600;font-size:14px">Question types<div class="seg" style="margin-top:6px">${[['mcq','Multiple choice'],['tf','True/false'],['short','Short answer'],['problem','Problems']].map(x=>`<button data-act="btype" data-id="${c.id}" data-v="${x[0]}" class="${b.types.includes(x[0])?'on':''}">${x[1]}</button>`).join('')}</div><span class="small mute" style="font-weight:400;margin-top:4px">${b.types.length?'':'None picked: types follow your sheets.'}</span></div>
+    ${ms.length?`<div class="f" style="font-weight:600;font-size:14px">Lectures to cover<div class="checks">${ms.map(m=>`<label><input type="checkbox" data-act="bscope" data-id="${c.id}" data-m="${m.id}" ${!b.scope||b.scope.includes(m.id)?'checked':''}>${esc(m.summary.title)}</label>`).join('')}</div></div>`:`<p class="small" style="color:var(--coral)">${sh.length?'No lectures yet: questions will come from your sheets only.':'Add lecture files or question sheets first.'}</p>`}
+    <div class="row"><button class="btn pri" data-act="genQuiz" data-id="${c.id}" ${ui.busy['q'+c.id]?'disabled':''} ${!ms.length&&!sh.length?'disabled':''}>${ui.busy['q'+c.id]?'<div class="spin"></div>Writing your test…':'Start test'}</button>${weak.length?`<button class="btn" data-act="genWeak" data-id="${c.id}" ${ui.busy['q'+c.id]?'disabled':''}>Drill weak topics</button>`:''}</div>
+    ${weak.length?`<div class="small"><span class="mute">Weak topics:</span> ${weak.map(w=>`<span class="chip coral">${esc(w)}</span>`).join(' ')}</div>`:''}
+  </div></section>
+  <section class="glass pane"><h2 style="margin-bottom:10px">Test history</h2>${qs.length?qs.map(q=>`<div class="task"><div class="t"><span><b>${q.pct}%</b> · ${esc(q.label||'Practice test')}</span><div class="small mute">${fmtD(q.day||isoD(q.date))} · ${q.n} questions${(q.weak||[]).length?' · weak: '+q.weak.map(esc).join(', '):''}</div></div>${q.questions?`<button class="btn sm ghost" data-act="retake" data-id="${q.id}">Retake</button>`:''}</div>`).join(''):'<p class="small mute">No tests yet.</p>'}</section>`;
+}
+const LET='ABCDEFGH';
+function runHTML(c){
+  const r=ui.run;const n=r.qs.length;
+  if(r.phase==='done'||r.phase==='grading'){
+    const sc=r.qs.reduce((a,q,i)=>a+(r.grades[i]?.score??0),0);const pending=r.qs.some((q,i)=>r.grades[i]?.score==null);
+    return`<section class="glass pane grid" style="gap:16px"><div class="row between"><div><p class="mute small">${esc(r.label)}</p><div class="score">${r.phase==='grading'?'…':pct(sc/n*100)+'%'}</div><p class="mute">${r.phase==='grading'?'Grading your written answers…':`${Math.round(sc*10)/10} of ${n} points`+(pending?' · mark the open ones yourself below':'')}</p></div><div class="row"><button class="btn pri" data-act="newQuiz" data-id="${c.id}">New test</button><button class="btn" data-act="closeRun">Back</button></div></div>
+    ${r.weak&&r.weak.length?`<p class="small">Practice next: ${r.weak.map(w=>`<span class="chip coral">${esc(w)}</span>`).join(' ')}</p>`:''}</section>
+    ${r.qs.map((q,i)=>{const g=r.grades[i]||{};const cls=g.score==null?'':g.score>=.99?'ok':g.score>0?'part':'no';const a=r.ans[i];
+      return`<div class="rev glass ${cls}"><div class="row between"><b>Question ${i+1}</b><span class="chip">${esc(q.topic||'')}</span></div><div class="md">${md(q.question)}</div>
+      ${q.type==='mcq'?q.options.map((o,k)=>`<div class="opt ${k===q.answer?'right':a===k?'wrong':''}"><span class="k">${LET[k]}</span><span class="md">${md(o)}</span></div>`).join(''):q.type==='tf'?`<p>Your answer: <b>${a==null?'none':a?'True':'False'}</b> · Correct: <b>${q.answer?'True':'False'}</b></p>`:`<div><p class="small mute">Your answer</p><div class="md">${a?esc(a).replace(/\n/g,'<br>'):'<i>No answer</i>'}</div></div><div><p class="small mute">Model answer</p><div class="md">${md(q.answer)}</div></div>${g.feedback?`<p class="small"><b>Feedback:</b> ${esc(g.feedback)}</p>`:''}${g.score==null&&r.phase==='done'?`<div class="row"><span class="small">How did you do?</span>${[[1,'Got it'],[.5,'Partly'],[0,'Missed it']].map(x=>`<button class="btn sm" data-act="self" data-i="${i}" data-v="${x[0]}">${x[1]}</button>`).join('')}</div>`:''}`}
+      ${q.explanation?`<div class="small md"><b>Why:</b> ${md(q.explanation).replace(/^<p>|<\/p>\s*$/g,'')}</div>`:''}</div>`}).join('')}`;
+  }
+  const q=r.qs[r.idx];const a=r.ans[r.idx];
+  return`<section class="glass pane grid" style="gap:18px"><div class="row between"><span class="small mute">${esc(r.label)} · Question ${r.idx+1} of ${n}</span><button class="btn sm ghost" data-act="closeRun">Quit</button></div>
+  <div class="bar"><i style="width:${(r.ans.filter(x=>x!=null&&x!=='').length/n*100)}%"></i></div>
+  <div class="md" style="font-size:18px">${md(q.question)}</div>
+  ${q.type==='mcq'?`<div class="grid" style="gap:10px">${q.options.map((o,k)=>`<button class="opt ${a===k?'sel':''}" data-act="pick" data-v="${k}"><span class="k">${LET[k]}</span><span class="md">${md(o)}</span></button>`).join('')}</div>`:q.type==='tf'?`<div class="grid" style="gap:10px;grid-template-columns:1fr 1fr">${[true,false].map(v=>`<button class="opt ${a===v?'sel':''}" data-act="pick" data-v="${v}"><span class="k">${v?'T':'F'}</span>${v?'True':'False'}</button>`).join('')}</div>`:`<label class="f">Your answer${q.type==='problem'?' (show your steps)':''}<textarea id="ans-${r.idx}" data-act="typeAns" placeholder="Type your answer…">${esc(a||'')}</textarea></label>`}
+  <div class="row between"><div class="qdots">${r.qs.map((_,i)=>`<button data-act="jump" data-v="${i}" class="${r.ans[i]!=null&&r.ans[i]!==''?'a':''} ${i===r.idx?'c':''}" aria-label="Question ${i+1}">${i+1}</button>`).join('')}</div>
+  <div class="row"><button class="btn" data-act="jump" data-v="${r.idx-1}" ${r.idx===0?'disabled':''}>Back</button>${r.idx<n-1?`<button class="btn pri" data-act="jump" data-v="${r.idx+1}">Next</button>`:`<button class="btn pri" data-act="finish">Finish and grade</button>`}</div></div></section>`;
+}
+function asgHTML(c){
+  const as=asgOf(c.id);const draft=ui.asg[c.id]||'';
+  return`<section class="glass pane grid" style="gap:14px"><h2>Solve an assignment</h2><p class="small mute">Upload the assignment or paste it. You get the full solution, one step at a time, with the reason for each step and a quick check question.</p>
+    <div class="drop" data-drop="assignment" data-id="${c.id}" tabindex="0" role="button"><b>Upload assignment</b><span class="small mute">PDF, Word, text or a photo</span></div>
+    <label class="f">Or paste it here<textarea id="asgText-${c.id}" data-act="asgDraft" data-id="${c.id}" placeholder="Paste the assignment questions…">${esc(draft)}</textarea></label>
+    <div class="row"><button class="btn pri" data-act="solvePaste" data-id="${c.id}">Solve step by step</button></div></section>
+  ${as.map(a=>`<details class="glass mat" ${ui.openMat===a.id||a.status!=='ready'?'open':''} data-mat="${a.id}"><summary><div style="flex:1"><h3>${esc(a.name)}</h3><p class="small mute">${new Date(a.addedAt).toLocaleDateString()}${a.understood?' · understood':''}</p></div>${a.understood?'<span class="chip sun">Understood</span>':''}</summary>
+    <div class="body">${a.status!=='ready'&&a.status!=='streaming'?statusHTML(a):''}<div class="md" id="sol-${a.id}">${md(a.solution||'')}</div>
+    ${a.status==='ready'?`<div class="grid" style="gap:10px"><h3>Ask about this solution</h3>${(a.chat||[]).map(m=>`<div class="bubble ${m.role==='user'?'me':'ai'} md">${m.role==='user'?esc(m.content):md(m.content)}</div>`).join('')}<div id="chatLive-${a.id}"></div>
+    <div class="row" style="flex-wrap:nowrap"><input type="text" id="chat-${a.id}" data-act="chatDraft" data-id="${a.id}" value="${esc(ui.chat[a.id]||'')}" placeholder="e.g. Why did we divide by 2 in step 3?"><button class="btn pri" data-act="ask" data-id="${a.id}">Ask</button></div>
+    <div class="row"><button class="btn ${a.understood?'':'pri'}" data-act="asgOk" data-id="${a.id}">${a.understood?'Mark as not understood':'I understand it now'}</button><button class="btn ghost danger" data-act="delItem" data-kind="assignment" data-id="${a.id}">Delete</button></div></div>`:''}</div></details>`).join('')}`;
+}
+
+/* ---------- actions ---------- */
+function courseModal(c){
+  const e=c||{name:'',examDate:'',color:COLORS[S.courses.filter(x=>!x.demo).length%COLORS.length]};let color=e.color;
+  const r=$('#modalRoot');
+  r.innerHTML=`<div class="modal"><form class="glass" id="cForm"><h2>${c?'Edit course':'Add a course'}</h2><label class="f">Course name<input type="text" id="cName" value="${esc(e.name)}" placeholder="e.g. Organic Chemistry" required></label><label class="f">Final exam date<input type="date" id="cExam" value="${e.examDate||''}"></label><div class="f" style="font-weight:600;font-size:14px">Colour<div class="swatches" style="margin-top:6px">${COLORS.map(k=>`<button type="button" data-k="${k}" class="${k===color?'on':''}" style="background:${k}" aria-label="Colour ${k}"></button>`).join('')}</div></div><div class="row" style="justify-content:flex-end"><button type="button" class="btn ghost" id="cCancel">Cancel</button><button class="btn pri">${c?'Save':'Add course'}</button></div></form></div>`;
+  $('#cName').focus();
+  $$('.swatches button',r).forEach(b=>b.onclick=()=>{color=b.dataset.k;$$('.swatches button',r).forEach(x=>x.classList.toggle('on',x===b))});
+  $('#cCancel').onclick=()=>r.innerHTML='';
+  $('#cForm').onsubmit=ev=>{ev.preventDefault();const name=$('#cName').value.trim();if(!name)return;
+    if(c){c.name=name;c.examDate=$('#cExam').value;c.color=color;save(c)}else{if(hasDemo())clearDemo();const n={id:uid(),kind:'course',name,examDate:$('#cExam').value,color,addedAt:Date.now()};S.courses.push(n);save(n);location.hash='c-'+n.id}
+    r.innerHTML='';if(S.meta.plan)genPlan();render()};
+}
+async function processUpload(kind,cid,files){
+  const c=course(cid);if(!c)return;if(c.demo){toast('This is the example course. Add your own course to upload files.');return}
+  for(const f of files){
+    const e={id:uid(),kind,courseId:cid,name:f.name.replace(/\.[^.]+$/,''),addedAt:Date.now(),status:'working',stage:'Reading file…'};
+    if(kind==='material')e.studied=false;
+    S[KIND[kind]].push(e);if(kind==='assignment')ui.openMat=e.id;render();
+    try{
+      const {text,images}=await readFile(f);
+      if(!text.trim()&&!images.length)throw new Error('No readable text found in this file.');
+      if(!text.trim()&&!(await imgOK()))throw new Error('This file is scanned pages, and image reading is not available here. Try a PDF with selectable text, or paste the text.');
+      e.text=text.slice(0,30000);e._images=images;
+      await runAI(e,c,images);
+    }catch(err){e.status='error';e.error=aiErr(err);delete e.stage;render()}
+    save(e);
+  }
+}
+async function runAI(e,c,images=[]){
+  const text=e.text||'';e.status='working';e.error=null;
+  try{
+    if(e.kind==='material'){e.stage='Summarizing…';render();e.summary=await summarize(c,e.name,text,images,s=>{e.stage=s;render()});if(S.meta.plan)genPlan()}
+    else if(e.kind==='sheet'){e.stage='Studying the question style…';render();e.profile=await analyzeSheet(c,e.name,text,images)}
+    else if(e.kind==='assignment'){e.stage='Solving…';e.status='streaming';render();const ok=images.length&&await imgOK();
+      e.solution=await askText(solvePrompt(c,text||'(The assignment is in the attached images.)'),t=>{e.solution=t;const el=document.getElementById('sol-'+e.id);if(el)el.innerHTML=md(t)},{modelTier:'complex',...(ok?{images:images.slice(0,8)}:{})});
+      if(S.meta.plan)genPlan()}
+    e.status='ready';delete e.stage;logActivity();
+  }catch(err){e.status='error';e.error=aiErr(err);delete e.stage}
+  delete e._images;render();
+}
+async function startQuiz(c,opts,label){
+  if(c.demo){toast('Add your own course to take real tests.');return}
+  ui.busy['q'+c.id]=true;ui.tab[c.id]='prac';render();
+  try{const qs=await genQuiz(c,opts);ui.run={cid:c.id,qs,ans:Array(qs.length).fill(null),idx:0,phase:'answer',grades:{},label:label||'Practice test',kind:opts.kind||'quiz'};}
+  catch(e){toast(aiErr(e),'bad')}
+  ui.busy['q'+c.id]=false;render();window.scrollTo({top:0,behavior:'smooth'});
+}
+async function finishQuiz(){
+  const r=ui.run;const c=course(r.cid);r.phase='grading';render();
+  const open=[];r.qs.forEach((q,i)=>{const a=r.ans[i];if(q.type==='mcq'||q.type==='tf')r.grades[i]={score:a===q.answer?1:0};else if(a==null||!String(a).trim())r.grades[i]={score:0,feedback:'No answer given.'};else open.push({i,question:q.question,modelAnswer:q.answer,studentAnswer:a})});
+  if(open.length){try{(await gradeOpen(c,open)).forEach(g=>{if(g&&r.grades[g.i]===undefined)r.grades[g.i]={score:Math.max(0,Math.min(1,+g.score||0)),feedback:g.feedback}})}catch(e){toast('Automatic grading failed: '+aiErr(e)+' Mark those answers yourself.','bad')}
+    open.forEach(o=>{if(!r.grades[o.i])r.grades[o.i]={score:null}})}
+  r.phase='done';recordQuiz();render();window.scrollTo({top:0,behavior:'smooth'});
+}
+function recordQuiz(){
+  const r=ui.run;const n=r.qs.length;const sc=r.qs.reduce((a,q,i)=>a+(r.grades[i]?.score??0),0);
+  const tm={};r.qs.forEach((q,i)=>{const t=q.topic||'General';tm[t]=tm[t]||[0,0];tm[t][0]+=r.grades[i]?.score??0;tm[t][1]++});
+  r.weak=Object.entries(tm).filter(([t,v])=>v[0]/v[1]<.6).map(x=>x[0]);
+  const rec=r.rec||(r.rec={id:uid(),kind:'quiz',courseId:r.cid,date:Date.now(),day:todayISO(),label:r.label});
+  Object.assign(rec,{n,pct:pct(sc/n*100),weak:r.weak,questions:r.qs.map((q,i)=>({...q,mine:r.ans[i]}))});
+  if(!S.quizzes.includes(rec)){S.quizzes.push(rec);autoTick(r.kind==='mock'?'mock':r.kind==='weak'?'weak':'quiz',r.cid);logActivity()}
+  save(rec);
+}
+async function ask(a){
+  const inp=document.getElementById('chat-'+a.id);const q=(inp?.value||'').trim();if(!q)return;const c=course(a.courseId);
+  a.chat=a.chat||[];a.chat.push({role:'user',content:q});ui.chat[a.id]='';render();
+  const msgs=[{role:'user',content:`You are a patient tutor for "${c.name}". Here is an assignment and the step-by-step solution you wrote. Answer the student's follow-up questions simply, with small examples, using $...$ math.\n\nAssignment:\n"""${(a.text||'').slice(0,15000)}"""\n\nSolution:\n"""${(a.solution||'').slice(0,20000)}"""`},{role:'assistant',content:'Got it. Ask me anything about this solution.'},...a.chat.slice(-12)];
+  const live=document.getElementById('chatLive-'+a.id);
+  try{const t=await askText(msgs,txt=>{const el=document.getElementById('chatLive-'+a.id);if(el)el.innerHTML=`<div class="bubble ai md">${md(txt)}</div>`});a.chat.push({role:'assistant',content:t});save(a)}
+  catch(e){toast(aiErr(e),'bad');a.chat.pop()}
+  render();
+}
+function doTask(id){
+  const t=planTasks().find(x=>x.id===id);if(!t)return;const c=course(t.courseId);if(!c)return;
+  if(t.type==='study'){ui.tab[c.id]='sum';ui.openMat=t.ref;location.hash='c-'+c.id;render();setTimeout(()=>document.querySelector(`[data-mat="${t.ref}"]`)?.scrollIntoView({behavior:'smooth'}),60);return}
+  if(t.type==='assign'){ui.tab[c.id]='asg';ui.openMat=t.ref;location.hash='c-'+c.id;render();return}
+  location.hash='c-'+c.id;
+  if(t.type==='quiz')startQuiz(c,{n:10,diff:'match',scope:t.scope},'Practice test');
+  else if(t.type==='mock')startQuiz(c,{n:20,diff:'match',scope:null,kind:'mock'},'Mock exam');
+  else if(t.type==='weak')startQuiz(c,{n:10,diff:'match',scope:null,focus:weakTopics(c.id).join(', ')||'the hardest topics',kind:'weak'},'Weak-topic drill');
+  else{ui.tab[c.id]='sum';render()}
+}
+let dropTarget=null;
+function pick(kind,cid){dropTarget={kind,cid};const f=$('#filePick');f.value='';f.click()}
+$('#filePick').addEventListener('change',e=>{if(dropTarget&&e.target.files.length)processUpload(dropTarget.kind,dropTarget.cid,[...e.target.files])});
+document.addEventListener('click',async e=>{
+  const sw=e.target.closest('.drop');if(sw){pick(sw.dataset.drop,sw.dataset.id);return}
+  const el=e.target.closest('[data-act]');if(!el)return;const A=el.dataset.act,id=el.dataset.id;
+  if(['studied','tick'].includes(A)&&el.tagName==='INPUT'){e.stopPropagation()}
+  if(A==='studied'&&el.tagName==='INPUT'){e.preventDefault()}
+  const r=ui.run;
+  switch(A){
+    case'addCourse':courseModal();break;
+    case'editCourse':courseModal(course(id));break;
+    case'demo':loadDemo();render();break;
+    case'delCourse':{const c=course(id);if(await confirmBox('Delete '+c.name+' and everything in it?')){[...matsOf(id),...sheetsOf(id),...quizOf(id),...asgOf(id)].forEach(remove);remove(c);if(S.meta.plan)genPlan();location.hash='dashboard';render()}break}
+    case'tab':ui.tab[id]=el.dataset.tab;render();break;
+    case'studied':{const m=S.materials.find(x=>x.id===id);if(!m)break;m.studied=!m.studied;ui.openMat=m.id;if(m.studied){m.studiedAt=todayISO();autoTick('study',m.courseId,m.id);logActivity()}else{const t=planTasks().find(x=>x.type==='study'&&x.ref===m.id);if(t){t._t.done=false;saveMeta()}}save(m);render();break}
+    case'tick':{const t=planTasks().find(x=>x.id===id);if(t){t._t.done=el.checked;t._t.doneAt=el.checked?todayISO():null;if(el.checked)logActivity();if(t.type==='study'){const m=S.materials.find(x=>x.id===t.ref);if(m){m.studied=el.checked;save(m)}}saveMeta();render()}break}
+    case'doTask':doTask(id);break;
+    case'makePlan':{if(!S.courses.length){courseModal();break}const pe=$('#planEnd'),ph=$('#planHours');if(pe&&pe.value)S.meta.planEnd=pe.value;if(ph)S.meta.hours=+ph.value;genPlan();if(hasDemo())S.meta.plan.demo=true;location.hash='plan';render();toast('Your study plan is ready.');break}
+    case'retry':{const x=S[KIND[el.dataset.kind]].find(y=>y.id===id);if(!x)break;if(!x.text){toast('Please upload the file again.');remove(x);render();break}runAI(x,course(x.courseId)).then(()=>save(x));break}
+    case'delItem':{const x=S[KIND[el.dataset.kind]].find(y=>y.id===id);if(x&&await confirmBox('Delete '+x.name+'?')){remove(x);if(S.meta.plan&&x.kind!=='sheet')genPlan();render()}break}
+    case'quizMat':{const m=S.materials.find(x=>x.id===id);startQuiz(course(m.courseId),{n:8,diff:'match',scope:[m.id]},'Test: '+m.summary.title);break}
+    case'bset':{const b=ui.builder[id];b[el.dataset.k]=el.dataset.k==='n'?+el.dataset.v:el.dataset.v;render();break}
+    case'btype':{const b=ui.builder[id];const v=el.dataset.v;b.types=b.types.includes(v)?b.types.filter(x=>x!==v):[...b.types,v];render();break}
+    case'bscope':{const b=ui.builder[id];const all=matsOf(id).filter(m=>m.summary).map(m=>m.id);const cur=b.scope||all;b.scope=el.checked?[...new Set([...cur,el.dataset.m])]:cur.filter(x=>x!==el.dataset.m);if(b.scope.length===all.length)b.scope=null;break}
+    case'genQuiz':{const b=ui.builder[id];if(b.scope&&!b.scope.length){toast('Pick at least one lecture.');break}startQuiz(course(id),{...b},b.n>=20?'Mock exam':'Practice test');break}
+    case'genWeak':startQuiz(course(id),{n:10,diff:'match',scope:null,focus:weakTopics(id).join(', '),kind:'weak'},'Weak-topic drill');break;
+    case'newQuiz':ui.run=null;render();break;
+    case'closeRun':if(r&&r.phase==='answer'&&r.ans.some(x=>x!=null)&&!(await confirmBox('Quit this test? Your answers will be lost.','Quit')))break;ui.run=null;render();break;
+    case'pick':{const q=r.qs[r.idx];r.ans[r.idx]=q.type==='tf'?el.dataset.v==='true':+el.dataset.v;render();break}
+    case'jump':{const v=+el.dataset.v;if(v>=0&&v<r.qs.length){r.idx=v;render()}break}
+    case'finish':{const left=r.ans.filter(x=>x==null||x==='').length;if(left&&!(await confirmBox(left+' question'+(left>1?'s are':' is')+' unanswered. Finish anyway?','Finish')))break;finishQuiz();break}
+    case'self':{r.grades[+el.dataset.i]={score:+el.dataset.v};recordQuiz();render();break}
+    case'retake':{const q=S.quizzes.find(x=>x.id===id);ui.run={cid:q.courseId,qs:q.questions.map(({mine,...x})=>x),ans:Array(q.questions.length).fill(null),idx:0,phase:'answer',grades:{},label:'Retake: '+(q.label||'test')};render();break}
+    case'solvePaste':{const c=course(id);if(c.demo){toast('Add your own course to solve assignments.');break}const t=(ui.asg[id]||'').trim();if(t.length<10){toast('Paste the assignment first.');break}const a={id:uid(),kind:'assignment',courseId:id,name:t.split('\n')[0].slice(0,60)||'Assignment',addedAt:Date.now(),text:t.slice(0,30000),status:'working'};S.assignments.push(a);ui.asg[id]='';ui.openMat=a.id;runAI(a,c).then(()=>save(a));break}
+    case'ask':ask(S.assignments.find(x=>x.id===id));break;
+    case'asgOk':{const a=S.assignments.find(x=>x.id===id);a.understood=!a.understood;if(a.understood){autoTick('assign',a.courseId,a.id);logActivity()}save(a);render();break}
+  }
+});
+document.addEventListener('input',e=>{const el=e.target;const A=el.dataset?.act;if(A==='typeAns'&&ui.run){ui.run.ans[ui.run.idx]=el.value;const d=$$('.qdots button')[ui.run.idx];if(d)d.classList.toggle('a',!!el.value.trim())}if(A==='asgDraft')ui.asg[el.dataset.id]=el.value;if(A==='chatDraft')ui.chat[el.dataset.id]=el.value});
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.dataset?.act==='chatDraft'){e.preventDefault();ask(S.assignments.find(x=>x.id===e.target.dataset.id))}if((e.key==='Enter'||e.key===' ')&&e.target.classList?.contains('drop')){e.preventDefault();pick(e.target.dataset.drop,e.target.dataset.id)}});
+document.addEventListener('toggle',e=>{const d=e.target;if(d.dataset?.mat){if(d.open)ui.openMat=d.dataset.mat;else if(ui.openMat===d.dataset.mat)ui.openMat=null}},true);
+document.addEventListener('dragover',e=>{const d=e.target.closest?.('.drop');if(d){e.preventDefault();d.classList.add('over')}});
+document.addEventListener('dragleave',e=>{const d=e.target.closest?.('.drop');if(d)d.classList.remove('over')});
+document.addEventListener('drop',e=>{const d=e.target.closest?.('.drop');if(!d)return;e.preventDefault();d.classList.remove('over');if(e.dataTransfer.files.length)processUpload(d.dataset.drop,d.dataset.id,[...e.dataTransfer.files])});
+window.addEventListener('hashchange',()=>{render();window.scrollTo(0,0)});
+
+(async()=>{
+  await initStore();
+  for(const k of Object.values(KIND))S[k].forEach(e=>{if(e.status&&e.status!=='ready'&&e.status!=='error'){e.status='error';e.error='Interrupted. Retry to finish.'}});
+  render();
+  getAI().then(()=>render());
+})();
+}
+</script>
+</body>
+</html>
