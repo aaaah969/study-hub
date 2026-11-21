@@ -11,7 +11,9 @@ loadEnv(path.join(ROOT, '.env'));
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
-const KEY = process.env.ANTHROPIC_API_KEY || '';
+// STUDYHUB_API_KEY is an alternative name for places where ANTHROPIC_API_KEY is reserved
+// (for example cloud sessions where Claude itself uses that name). It is tried first.
+const KEY = process.env.STUDYHUB_API_KEY || process.env.ANTHROPIC_API_KEY || '';
 const MODELS = {
   quick: process.env.MODEL_QUICK || 'claude-haiku-5-5',
   default: process.env.MODEL_DEFAULT || 'claude-sonnet-5-5',

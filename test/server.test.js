@@ -142,3 +142,19 @@ test('invalid conversations and upstream errors give clear errors', async () => 
   r = await req('POST', '/api/ai', { body: { messages: [{ role: 'user', content: 'hi' }] } });
   assert.equal(r.status, 502); assert.equal(r.json().code, 'bad_key');
 });
+
+test('STUDYHUB_API_KEY is accepted as the key', async () => {
+  const port = 30000 + Math.floor(Math.random() * 20000);
+  const env = { ...process.env, PORT: String(port), DATA_DIR: dataDir, STUDYHUB_API_KEY: 'alt-key', ANTHROPIC_BASE_URL: fakeURL };
+  delete env.ANTHROPIC_API_KEY;
+  const s2 = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], { env, stdio: ['ignore', 'pipe', 'inherit'] });
+  try {
+    await new Promise(r => s2.stdout.on('data', d => String(d).includes('running') && r()));
+    const r = await new Promise((resolve, reject) => {
+      const q = http.request('http://localhost:' + port + '/api/ai', { method: 'POST', headers: { 'content-type': 'application/json' } }, res => { let o = ''; res.on('data', c => o += c); res.on('end', () => resolve({ status: res.statusCode })); });
+      q.on('error', reject); q.end(JSON.stringify({ messages: [{ role: 'user', content: 'hi' }] }));
+    });
+    assert.equal(r.status, 200);
+    assert.equal(lastUpstream.headers['x-api-key'], 'alt-key');
+  } finally { s2.kill(); }
+});

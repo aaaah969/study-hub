@@ -5,7 +5,7 @@ A single-user study app. A zero-dependency Node server (`server.js`) serves one 
 
 ## Run
 - `npm start` (or `npm run dev` to restart on server changes), then open http://localhost:3000
-- Needs `ANTHROPIC_API_KEY` in `.env` (see `.env.example`). Without it the app runs but AI features show an "AI is off" banner.
+- Needs `ANTHROPIC_API_KEY` in `.env` (see `.env.example`), or `STUDYHUB_API_KEY`, which is read first; use that name in Claude Code cloud environments, where an `ANTHROPIC_API_KEY` variable was seen not to reach sessions (likely because Claude Code itself uses that name). Without it the app runs but AI features show an "AI is off" banner.
 - `npm test` runs `test/server.test.js` with Node's built-in runner against a fake Anthropic API (no key, no cost). `DATA_DIR` and `ANTHROPIC_BASE_URL` env vars let tests use a temp folder and the fake API.
 
 ## Layout
