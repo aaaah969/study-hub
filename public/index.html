@@ -302,7 +302,13 @@ let SAMPLE;
 let AIINFO={};
 async function getAI(){if(SAMPLE!==undefined)return SAMPLE;try{const r=await timeout(fetch('/api/health'),8000);AIINFO=await r.json();SAMPLE=AIINFO.ai?true:null}catch(e){SAMPLE=null}return SAMPLE}
 async function imgOK(){return true}
-function parseJSON(t){t=String(t||'').trim().replace(/^```(?:json)?\s*/i,'').replace(/```\s*$/,'');try{return JSON.parse(t)}catch(e){}const a=t.indexOf('{'),b=t.lastIndexOf('}');if(a>=0&&b>a){try{return JSON.parse(t.slice(a,b+1))}catch(e){}}throw{code:'bad_json',message:'The AI reply could not be read. Please try again.'}}
+// AI replies often write LaTeX inside JSON strings with a single backslash. Some of those are valid JSON
+// escapes that silently eat a letter ("\theta" becomes a tab + "heta", "\frac" a form feed + "rac"), so a lone
+// backslash before a known LaTeX command is doubled first; other invalid escapes (\omega) are doubled if parsing fails.
+const TEX_ESC=/(^|[^\\])((?:\\\\)*)\\(?=(?:theta|tau|times|text|textbf|textrm|tfrac|tan|tanh|tilde|triangle|top|to|frac|forall|beta|bar|boldsymbol|binom|big|bigl|bigr|bmod|bot|because|nabla|nu|neq|neg|not|ne|ni|rho|right|rightarrow|rangle|rfloor|rceil|underline|uparrow|underbrace|upsilon)(?![A-Za-z]))/g;
+const fixTexEsc=t=>t.replace(TEX_ESC,(m,a,b)=>a+b+'\\\\');
+const fixBadEsc=t=>t.replace(/\\(["\\\/bfnrtu])|\\/g,(m,k)=>k?m:'\\\\');
+function parseJSON(t){t=fixTexEsc(String(t||'').trim().replace(/^```(?:json)?\s*/i,'').replace(/```\s*$/,''));const a=t.indexOf('{'),b=t.lastIndexOf('}');for(const x of [t,a>=0&&b>a?t.slice(a,b+1):null])if(x!=null)for(const y of [x,fixBadEsc(x)]){try{return JSON.parse(y)}catch(e){}}throw{code:'bad_json',message:'The AI reply could not be read. Please try again.'}}
 const toB64=b=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(b)});
 // At most 4 AI requests run at once (long files and several uploads run in parallel),
 // and a request that fails before any text arrived is retried when the API was busy.
@@ -402,9 +408,11 @@ function confirmBox(msg,yes='Delete'){return new Promise(res=>{const r=$('#modal
 // AI JSON is not guaranteed to have the shape we asked for, so coerce it before it reaches the page.
 const str=v=>v==null?'':typeof v==='string'?v:typeof v==='object'?Object.values(v).map(str).filter(Boolean).join(': '):String(v);
 const strs=(v,max=20)=>(Array.isArray(v)?v:v==null||v===''?[]:[v]).map(str).filter(x=>x.trim()).slice(0,max);
+// A formula with LaTeX commands but no $ delimiters would show as raw code: wrap it (after a "Label:" if there is one).
+const mathWrap=f=>{if(f.includes('$')||!/\\[A-Za-z]+|[\^_]\{/.test(f))return f;const m=f.match(/^([^:\\$]{1,60}):\s*(.+)$/);return m?m[1]+': $'+m[2].trim()+'$':'$'+f.trim()+'$'};
 function normSummary(s,name){s=s&&typeof s==='object'?s:{};return{title:str(s.title).trim()||name,oneLine:str(s.oneLine),summary:str(s.summary),keyPoints:strs(s.keyPoints,12),
   terms:(Array.isArray(s.terms)?s.terms:[]).map(t=>t&&typeof t==='object'?{term:str(t.term),def:str(t.def??t.definition)}:{term:str(t),def:''}).filter(t=>t.term).slice(0,12),
-  formulas:strs(s.formulas,15),examTips:strs(s.examTips,6),topics:strs(s.topics,6)}}
+  formulas:strs(s.formulas,15).map(mathWrap),examTips:strs(s.examTips,6),topics:strs(s.topics,6)}}
 function normProfile(p){p=p&&typeof p==='object'?p:{};return{questionTypes:(Array.isArray(p.questionTypes)?p.questionTypes:[]).filter(q=>q&&q.type).map(q=>({type:str(q.type),share:+q.share||0})),
   difficulty:str(p.difficulty),level:str(p.level),style:str(p.style),topics:strs(p.topics,8),examples:strs(p.examples,5),count:+p.count||null}}
 // The correct option may come back as 2, "2", "C", "C)" or the option text itself.
@@ -426,7 +434,7 @@ async function summarize(c,name,text,images,onStage){
   return askJSON(`You are a friendly expert tutor for the college course "${c.name}". Summarize this lecture material ("${name}") for a student preparing for quizzes and the final exam.
 Write in simple, clear English: short sentences, everyday words, no fluff. Explain so a beginner truly understands, using a quick example where it helps. Use $...$ for inline math and $$...$$ for display math.
 Return JSON with exactly these keys:
-{"title": short topic title, "oneLine": one sentence on what this lecture is about, "summary": markdown of 150-320 words with short headings or bullets explaining the ideas, "keyPoints": 5-8 short strings the student must remember, "terms": up to 8 objects {"term","def"} with one-line definitions, "formulas": important formulas or rules as strings (may be empty), "examTips": up to 4 strings on what is likely to be asked and common mistakes, "topics": 2-6 short topic tags}
+{"title": short topic title, "oneLine": one sentence on what this lecture is about, "summary": markdown of 150-320 words with short headings or bullets explaining the ideas, "keyPoints": 5-8 short strings the student must remember, "terms": up to 8 objects {"term","def"} with one-line definitions, "formulas": important formulas or rules as strings, each formula wrapped in $...$ like "Period: $T = 2\\pi\\sqrt{m/k}$" (may be empty), "examTips": up to 4 strings on what is likely to be asked and common mistakes, "topics": 2-6 short topic tags}
 ${text.trim()?`Material:\n"""${src.slice(0,DIRECT)}"""`:'The material is given as page images.'}`,ok?{images:images.slice(0,8)}:{});
 }
 async function analyzeSheet(c,name,text,images){
@@ -605,7 +613,7 @@ function sumHTML(c){
   ${ms.length?ms.map(m=>{const s=m.summary;if(!s)return`<div class="glass pane"><h3>${esc(m.name)}</h3>${statusHTML(m)}</div>`;return`<details class="glass mat" ${ui.openMat===m.id?'open':''} data-mat="${m.id}"><summary><input type="checkbox" data-act="studied" data-id="${m.id}" ${m.studied?'checked':''} aria-label="Understood" style="width:22px;height:22px;accent-color:var(--teal);margin-top:4px;flex:none"><div style="flex:1"><h3>${esc(s.title)}</h3><p class="small mute">${esc(s.oneLine)}</p><div class="row" style="margin-top:8px;gap:6px">${(s.topics||[]).map(t=>`<span class="chip">${esc(t)}</span>`).join('')}${m.studied?'<span class="chip sun">Understood</span>':''}</div></div></summary>
     <div class="body"><div class="md">${md(s.summary)}</div>
     ${(s.keyPoints||[]).length?`<div><h3 style="margin-bottom:8px">Remember</h3><ul class="md" style="margin:0">${s.keyPoints.map(k=>`<li>${md(k).replace(/^<p>|<\/p>\s*$/g,'')}</li>`).join('')}</ul></div>`:''}
-    ${(s.formulas||[]).length?`<div><h3 style="margin-bottom:8px">Formulas and rules</h3><div class="md">${s.formulas.map(f=>`<p>${md(f).replace(/^<p>|<\/p>\s*$/g,'')}</p>`).join('')}</div></div>`:''}
+    ${(s.formulas||[]).length?`<div><h3 style="margin-bottom:8px">Formulas and rules</h3><div class="md">${s.formulas.map(f=>`<p>${md(mathWrap(f)).replace(/^<p>|<\/p>\s*$/g,'')}</p>`).join('')}</div></div>`:''}
     ${(s.terms||[]).length?`<div><h3 style="margin-bottom:8px">Key terms</h3><div class="terms">${s.terms.map(t=>`<div class="term md"><b>${esc(t.term)}</b>${md(t.def).replace(/^<p>|<\/p>\s*$/g,'')}</div>`).join('')}</div></div>`:''}
     ${(s.examTips||[]).length?`<div class="banner" style="display:block"><b>Exam tips</b><ul class="md" style="margin:6px 0 0">${s.examTips.map(k=>`<li>${md(k).replace(/^<p>|<\/p>\s*$/g,'')}</li>`).join('')}</ul></div>`:''}
     <div class="row"><button class="btn ${m.studied?'':'pri'}" data-act="studied" data-id="${m.id}">${m.studied?'Mark as not yet understood':'I understand this'}</button><button class="btn" data-act="quizMat" data-id="${m.id}">Test me on this</button>${m.demo?'':`<button class="btn ghost danger" data-act="delItem" data-kind="material" data-id="${m.id}">Delete</button>`}<span class="small mute">${esc(m.name)}</span></div></div></details>`}).join(''):`<div class="glass pane mute">No lectures yet. Drop your first file above.</div>`}`;
