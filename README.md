@@ -8,7 +8,19 @@ An AI study companion for your college courses.
 - **Study plan**: a day-by-day plan (up to 29 days) that finishes every course before its exam.
 - **Dashboard**: exam readiness, countdowns, plan progress, test scores and streak.
 
-## Run it
+## Easiest way to open it
+
+1. Install **Node.js** (one time): https://nodejs.org, choose the **LTS** version.
+2. Download Study Hub: on GitHub click the green **Code** button, then **Download ZIP**, and unzip it.
+3. Open the folder and **double-click the start file** for your computer:
+   - Windows: **Start Study Hub.bat**
+   - Mac: **Start Study Hub.command** (the first time, macOS may block it: right-click it, choose **Open**, then **Open** again)
+   - Linux: run `./start.sh`
+4. Your browser opens Study Hub. The first time, paste your **free Gemini key** into the box at the top (get one at https://aistudio.google.com/apikey: sign in with Google, click **Create API key**). It is checked and saved, and you never need to do it again.
+
+A small black window stays open while Study Hub runs: keep it open, and close it when you are done. Double-clicking the start file again while Study Hub is running just opens it in your browser.
+
+## Run it from a terminal
 
 You need [Node.js](https://nodejs.org/) 18 or newer and a **free** Google Gemini API key:
 

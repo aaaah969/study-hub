@@ -67,7 +67,7 @@ main{display:flex;flex-direction:column;gap:20px;max-width:1180px;width:100%;pad
 .btn.danger{color:var(--bad)}
 .btn:disabled{opacity:.55;cursor:wait}
 :focus-visible{outline:3px solid var(--teal);outline-offset:2px}
-input[type=text],input[type=date],input[type=number],select,textarea{background:var(--glass2);border:1px solid var(--hair);border-radius:12px;padding:10px 12px;font-size:16px;min-height:44px;width:100%}
+input[type=text],input[type=password],input[type=date],input[type=number],select,textarea{background:var(--glass2);border:1px solid var(--hair);border-radius:12px;padding:10px 12px;font-size:16px;min-height:44px;width:100%}
 textarea{min-height:140px;resize:vertical;line-height:1.5}
 label.f{display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:600}
 .drop{border:2px dashed color-mix(in srgb,var(--teal) 45%,transparent);border-radius:16px;padding:22px;text-align:center;cursor:pointer;background:var(--tealbg);transition:background .2s}
@@ -518,12 +518,27 @@ const hasDemo=()=>S.courses.some(c=>c.demo);
 
 /* ---------- render ---------- */
 const route=()=>{const h=location.hash.slice(1);if(h.startsWith('c-')&&course(h.slice(2)))return{v:'course',id:h.slice(2)};if(h==='plan')return{v:'plan'};return{v:'dash'}};
+// Shown while no AI key is set. On a local server the key can be pasted here; it is checked and saved to .env.
+function aiOffHTML(){return`<div class="banner" style="display:grid;gap:10px"><div><b>Turn on the free AI.</b> <span class="small">1. Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> (sign in with Google, click <b>Create API key</b>, copy it). 2. Paste it here:</span></div>
+  ${AIINFO.canSetup===false?'<span class="small">This server is not on localhost, so add <code>GEMINI_API_KEY=your-key</code> to the .env file and restart it.</span>':`<form class="row" id="keyForm" style="flex-wrap:nowrap"><input type="password" id="keyInput" autocomplete="off" spellcheck="false" placeholder="Paste your Gemini API key" aria-label="Gemini API key" style="flex:1"><button class="btn pri" id="keySave">${ui.savingKey?'<div class="spin"></div>Checking…':'Save key'}</button></form><span class="small mute">The key is checked with Google and saved in the .env file on this computer. It is never shown again.</span>`}
+  <span class="small mute">Your progress still saves without it.</span></div>`}
+async function saveKey(){
+  const inp=$('#keyInput');const v=(inp?.value||'').trim();if(!v){toast('Paste your key first.');return}
+  ui.savingKey=true;render();
+  try{const r=await fetch('/api/setup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({geminiKey:v})});const j=await r.json().catch(()=>({}));
+    if(!r.ok){toast(j.message||'The key could not be saved.','bad');return}
+    ui.keyDraft='';SAMPLE=undefined;await getAI();toast('The free AI is on. You can start adding files.')}
+  catch(e){toast('Could not reach the Study Hub server. Is it still running?','bad')}
+  finally{ui.savingKey=false;render()}
+}
+document.addEventListener('submit',e=>{if(e.target.id==='keyForm'){e.preventDefault();saveKey()}});
 function render(){
   const a=document.activeElement,aid=a&&a.id,sel=a&&'selectionStart' in a?[a.selectionStart,a.selectionEnd]:null;
   const r=route();
   $('#side').innerHTML=sideHTML(r);
   const m=$('#main');
-  m.innerHTML=(SAMPLE===null?`<div class="banner"><b>AI is off.</b><span class="small">Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>, add <code>GEMINI_API_KEY=your-key</code> to the .env file and restart the server (npm start). Your progress still saves.</span></div>`:'')+(r.v==='course'?courseHTML(course(r.id)):r.v==='plan'?planHTML():dashHTML());
+  m.innerHTML=(SAMPLE===null?aiOffHTML():'')+(r.v==='course'?courseHTML(course(r.id)):r.v==='plan'?planHTML():dashHTML());
+  {const ki=$('#keyInput');if(ki&&ui.keyDraft)ki.value=ui.keyDraft}
   if(aid){const el=document.getElementById(aid);if(el){el.focus();if(sel&&el.setSelectionRange)try{el.setSelectionRange(...sel)}catch(e){}}}
   typeset(m);
 }
@@ -800,7 +815,7 @@ document.addEventListener('click',async e=>{
     case'asgOk':{const a=S.assignments.find(x=>x.id===id);a.understood=!a.understood;if(a.understood){autoTick('assign',a.courseId,a.id);logActivity()}save(a);render();break}
   }
 });
-document.addEventListener('input',e=>{const el=e.target;const A=el.dataset?.act;if(A==='typeAns'&&ui.run){ui.run.ans[ui.run.idx]=el.value;const d=$$('.qdots button')[ui.run.idx];if(d)d.classList.toggle('a',!!el.value.trim())}if(A==='asgDraft')ui.asg[el.dataset.id]=el.value;if(A==='chatDraft')ui.chat[el.dataset.id]=el.value});
+document.addEventListener('input',e=>{const el=e.target;const A=el.dataset?.act;if(A==='typeAns'&&ui.run){ui.run.ans[ui.run.idx]=el.value;const d=$$('.qdots button')[ui.run.idx];if(d)d.classList.toggle('a',!!el.value.trim())}if(A==='asgDraft')ui.asg[el.dataset.id]=el.value;if(el.id==='keyInput')ui.keyDraft=el.value;if(A==='chatDraft')ui.chat[el.dataset.id]=el.value});
 // Escape, or a click on the dimmed backdrop, cancels whichever dialog is open.
 const cancelModal=()=>$('#modalRoot [data-cancel]')?.click();
 $('#modalRoot').addEventListener('mousedown',e=>{if(e.target.classList.contains('modal'))cancelModal()});

@@ -4,7 +4,9 @@
 A single-user study app. A zero-dependency Node server (`server.js`) serves one page (`public/index.html`), stores data in `data/db.json`, and proxies AI calls to Google Gemini (default, free tier) or the Anthropic Messages API, with the key from `.env`.
 
 ## Run
+- Double-click start files: `Start Study Hub.bat` (Windows, CRLF), `Start Study Hub.command` (macOS, executable) and `start.sh` (Linux) check for Node 18+ and run `node server.js --open`, which opens the browser; if the port is taken, the server assumes Study Hub is already running, opens it and exits 0. Keep the line endings set in `.gitattributes`.
 - `npm start` (or `npm run dev` to restart on server changes), then open http://localhost:3000
+- First run without a key: the banner posts the key to `POST /api/setup` (localhost-only server, same-origin JSON). The server checks it with Google's model list, writes `GEMINI_API_KEY` into `.env` (`ENV_FILE` overrides the path for tests; other lines kept; mode 600) and switches the AI on without a restart. The key is never sent back to the browser.
 - Needs `GEMINI_API_KEY` (free, aistudio.google.com/apikey) in `.env` (see `.env.example`). Claude is optional: `ANTHROPIC_API_KEY` or `STUDYHUB_API_KEY` (read first; use that name in Claude Code cloud environments, where an `ANTHROPIC_API_KEY` variable was seen not to reach sessions). Provider: `AI_PROVIDER` if set, else Gemini if its key is set, else Anthropic. Without a key the app runs but AI features show an "AI is off" banner.
 - `npm test` runs `test/*.test.js` with Node's built-in runner against fake Gemini and Anthropic APIs (no key, no cost). `DATA_DIR`, `GEMINI_BASE_URL` and `ANTHROPIC_BASE_URL` let tests use a temp folder and the fakes. Tests strip real keys from the environment and never print key values: keep it that way.
 

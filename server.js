@@ -5,9 +5,12 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { exec } = require('child_process');
 
 const ROOT = __dirname;
-loadEnv(path.join(ROOT, '.env'));
+// ENV_FILE lets tests use a temporary file instead of the real .env.
+const ENV_FILE = path.resolve(process.env.ENV_FILE || path.join(ROOT, '.env'));
+loadEnv(ENV_FILE);
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -49,15 +52,16 @@ const PROVIDERS = {
     concurrency: Number(env('AI_CONCURRENCY')) || 4,
   },
 };
-const PROVIDER_ID = (() => {
+let PROVIDER_ID = (() => {
   const want = env('AI_PROVIDER').toLowerCase();
   if (PROVIDERS[want]) return want;
   if (GEMINI_KEY) return 'gemini';
   if (ANTHROPIC_KEY) return 'anthropic';
   return 'gemini';
 })();
-const AI = PROVIDERS[PROVIDER_ID];
-const MODELS = AI.models;
+let AI = PROVIDERS[PROVIDER_ID];
+let MODELS = AI.models;
+function useProvider(id) { PROVIDER_ID = id; AI = PROVIDERS[id]; MODELS = AI.models; }
 // Server-side refusal fallback (Anthropic beta). Haiku has none, so it is only sent for the other tiers.
 const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
 const USE_FALLBACK = { quick: false, default: true, complex: true };
@@ -268,6 +272,42 @@ function anthropicError(status, j) {
   return { code: 'upstream', message: msg };
 }
 
+// ---------- first-run setup: paste the free Gemini key in the app instead of editing .env ----------
+// Only on a local-only server, and only from the app itself (allowed() checks origin and JSON).
+// The key is checked with Google, written to .env, and used at once. It is never sent back.
+async function handleSetup(req, res) {
+  if (!LOCAL_ONLY) return send(res, 403, { message: 'Setup from the browser is only allowed when the server runs on localhost. Edit .env instead.' });
+  const body = await readBody(req, 4096);
+  const key = typeof body.geminiKey === 'string' ? body.geminiKey.trim() : '';
+  if (!/^[A-Za-z0-9_\-]{20,200}$/.test(key)) return send(res, 400, { code: 'bad_format', message: 'That does not look like a Gemini API key. Copy the whole key from aistudio.google.com/apikey and try again.' });
+  // Check the key with a free, tiny request (listing models) before saving it.
+  try {
+    const r = await fetch((env('GEMINI_BASE_URL') || 'https://generativelanguage.googleapis.com') + '/v1beta/models?pageSize=1', { headers: { 'x-goog-api-key': key } });
+    if (r.status === 400 || r.status === 401 || r.status === 403) return send(res, 400, { code: 'bad_key', message: 'Google did not accept this key. Check that you copied all of it, or create a new one at aistudio.google.com/apikey.' });
+  } catch {
+    return send(res, 502, { code: 'network', message: 'Could not reach Google to check the key. Check your internet connection and try again.' });
+  }
+  try { writeEnvValue('GEMINI_API_KEY', key); }
+  catch (err) { return send(res, 500, { message: 'The key works, but it could not be saved to .env (' + err.code + '). Add GEMINI_API_KEY=your-key to .env by hand.' }); }
+  process.env.GEMINI_API_KEY = key;
+  PROVIDERS.gemini.key = key;
+  if (env('AI_PROVIDER').toLowerCase() !== 'anthropic') useProvider('gemini');
+  console.log('Gemini key saved to .env. AI is on.');
+  return send(res, 200, { ok: true, provider: PROVIDER_ID });
+}
+// Replace or add one NAME=value line in .env, keeping every other line as it is.
+function writeEnvValue(name, value) {
+  let lines = [];
+  try { lines = fs.readFileSync(ENV_FILE, 'utf8').split(/\r?\n/); } catch (err) { if (err.code !== 'ENOENT') throw err; }
+  const re = new RegExp('^\\s*(?:export\\s+)?' + name + '\\s*=');
+  let done = false;
+  lines = lines.map(l => { if (re.test(l)) { done = true; return name + '=' + value; } return l; });
+  if (!done) { while (lines.length && lines[lines.length - 1] === '') lines.pop(); lines.push(name + '=' + value, ''); }
+  const tmp = ENV_FILE + '.tmp';
+  fs.writeFileSync(tmp, lines.join('\n'), { mode: 0o600 });
+  fs.renameSync(tmp, ENV_FILE);
+}
+
 // ---------- routes ----------
 const server = http.createServer(async (req, res) => {
   try {
@@ -275,7 +315,8 @@ const server = http.createServer(async (req, res) => {
     const p = url.pathname;
     const block = allowed(req);
     if (block) return send(res, 403, { message: block });
-    if (p === '/api/health') return send(res, 200, { ai: !!AI.key, provider: PROVIDER_ID, providerName: AI.name, models: MODELS, concurrency: AI.concurrency });
+    if (p === '/api/health') return send(res, 200, { ai: !!AI.key, provider: PROVIDER_ID, providerName: AI.name, models: MODELS, concurrency: AI.concurrency, canSetup: LOCAL_ONLY });
+    if (p === '/api/setup' && req.method === 'POST') return await handleSetup(req, res);
     if (p === '/api/state' && req.method === 'GET') return send(res, 200, { docs: Object.values(db) });
     const m = p.match(/^\/api\/doc\/([^/]+)$/);
     if (m) {
@@ -305,11 +346,32 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+function openBrowser(url) {
+  const cmd = process.platform === 'win32' ? `start "" "${url}"` : process.platform === 'darwin' ? `open "${url}"` : `xdg-open "${url}"`;
+  exec(cmd, err => { if (err) console.log('Open ' + url + ' in your browser.'); });
+}
+
 if (require.main === module) {
+  const OPEN = process.argv.includes('--open') || env('OPEN_BROWSER') === '1';
+  const url = `http://${LOCAL_ONLY || HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`;
+  server.on('error', err => {
+    if (err.code === 'EADDRINUSE') {
+      // Probably Study Hub is already running (for example, the start file was clicked twice).
+      console.log(`Something is already running at ${url} (probably Study Hub). Opening it in your browser.`);
+      console.log('If it is not Study Hub, set a different PORT in .env.');
+      if (OPEN) openBrowser(url);
+      setTimeout(() => process.exit(0), 500);
+      return;
+    }
+    console.error('Could not start Study Hub:', err.message);
+    process.exit(1);
+  });
   server.listen(PORT, HOST, () => {
-    console.log(`Study Hub running at http://${LOCAL_ONLY || HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
+    console.log(`Study Hub running at ${url}`);
     if (!LOCAL_ONLY) console.log('Warning: HOST is not localhost. Anyone who can reach this machine can read your data and use your API key. There is no login.');
-    console.log(AI.key ? `AI: ${AI.name} (${MODELS.default})` : 'AI is off: get a free key at https://aistudio.google.com/apikey and add GEMINI_API_KEY=... to .env, then restart.');
+    console.log(AI.key ? `AI: ${AI.name} (${MODELS.default})` : 'AI is off: open the app and paste a free Gemini key (from https://aistudio.google.com/apikey).');
+    if (OPEN) openBrowser(url);
+    console.log('Keep this window open while you use Study Hub. Close it (or press Ctrl+C) to stop.');
   });
 }
 module.exports = { server };
