@@ -1,5 +1,5 @@
 // Study Hub server: serves the app, stores your data in data/db.json,
-// and forwards AI requests to the Anthropic API using your own key.
+// and forwards AI requests to Google Gemini (free tier) or Anthropic Claude using your own key.
 // No dependencies: needs Node 18 or newer.
 'use strict';
 const http = require('http');
@@ -11,19 +11,54 @@ loadEnv(path.join(ROOT, '.env'));
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
-// STUDYHUB_API_KEY is an alternative name for places where ANTHROPIC_API_KEY is reserved
-// (for example cloud sessions where Claude itself uses that name). It is tried first.
-const KEY = process.env.STUDYHUB_API_KEY || process.env.ANTHROPIC_API_KEY || '';
-const MODELS = {
-  quick: process.env.MODEL_QUICK || 'claude-haiku-5-5',
-  default: process.env.MODEL_DEFAULT || 'claude-sonnet-5-5',
-  complex: process.env.MODEL_COMPLEX || 'claude-opus-5-5',
+const env = k => (process.env[k] || '').trim();
+
+// ---------- AI providers ----------
+// Gemini is the default (free key from Google AI Studio). Claude still works if an Anthropic
+// key is set and no Gemini key is, or when AI_PROVIDER=anthropic.
+// STUDYHUB_API_KEY is an alternative name for the Anthropic key, for places where
+// ANTHROPIC_API_KEY is reserved (for example Claude Code cloud sessions).
+const GEMINI_KEY = env('GEMINI_API_KEY') || env('GOOGLE_API_KEY');
+const ANTHROPIC_KEY = env('STUDYHUB_API_KEY') || env('ANTHROPIC_API_KEY');
+const PROVIDERS = {
+  gemini: {
+    name: 'Google Gemini',
+    key: GEMINI_KEY,
+    // Model names change over time: override them in .env if Google retires one.
+    models: {
+      quick: env('GEMINI_MODEL_QUICK') || 'gemini-2.5-flash-lite',
+      default: env('GEMINI_MODEL_DEFAULT') || 'gemini-2.5-flash',
+      complex: env('GEMINI_MODEL_COMPLEX') || 'gemini-2.5-flash',
+    },
+    // Thinking counts toward the output limit on Gemini 2.5 models too.
+    maxTokens: { quick: 16384, default: 32768, complex: 65536 },
+    // The free tier allows only a few requests per minute, so the browser sends fewer at once.
+    concurrency: Number(env('AI_CONCURRENCY')) || 2,
+  },
+  anthropic: {
+    name: 'Anthropic Claude',
+    key: ANTHROPIC_KEY,
+    models: {
+      quick: env('MODEL_QUICK') || 'claude-haiku-5-5',
+      default: env('MODEL_DEFAULT') || 'claude-sonnet-5-5',
+      complex: env('MODEL_COMPLEX') || 'claude-opus-5-5',
+    },
+    // These models think before they answer, and thinking counts toward max_tokens.
+    maxTokens: { quick: 16000, default: 32000, complex: 64000 },
+    effort: { quick: 'low', default: 'medium', complex: 'high' },
+    concurrency: Number(env('AI_CONCURRENCY')) || 4,
+  },
 };
-// These models think before they answer, and thinking counts toward max_tokens,
-// so the limits are generous. Replies are streamed, so long ones do not time out.
-const MAX_TOKENS = { quick: 16000, default: 32000, complex: 64000 };
-const EFFORT = { quick: 'low', default: 'medium', complex: 'high' };
-// Server-side refusal fallback (beta). Haiku has none, so it is only sent for the other tiers.
+const PROVIDER_ID = (() => {
+  const want = env('AI_PROVIDER').toLowerCase();
+  if (PROVIDERS[want]) return want;
+  if (GEMINI_KEY) return 'gemini';
+  if (ANTHROPIC_KEY) return 'anthropic';
+  return 'gemini';
+})();
+const AI = PROVIDERS[PROVIDER_ID];
+const MODELS = AI.models;
+// Server-side refusal fallback (Anthropic beta). Haiku has none, so it is only sent for the other tiers.
 const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
 const USE_FALLBACK = { quick: false, default: true, complex: true };
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(ROOT, 'data'));
@@ -109,61 +144,48 @@ function allowed(req) {
   return null;
 }
 
-// ---------- AI: Anthropic Messages API with streaming ----------
+// ---------- AI: one endpoint, two providers, always streamed back as plain text ----------
+const NO_KEY_MSG = 'AI is off. Get a free key at https://aistudio.google.com/apikey, put GEMINI_API_KEY=your-key in the .env file, and restart the server.';
 async function handleAI(req, res) {
-  if (!KEY) return send(res, 400, { code: 'no_key', message: 'Add ANTHROPIC_API_KEY to the .env file and restart the server.' });
+  if (!AI.key) return send(res, 400, { code: 'no_key', message: NO_KEY_MSG });
   const body = await readBody(req);
   const tier = MODELS[body.tier] ? body.tier : 'default';
-  let messages = Array.isArray(body.messages) ? body.messages.filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim()) : [];
+  const messages = Array.isArray(body.messages) ? body.messages.filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim()).map(m => ({ role: m.role, content: m.content })) : [];
   if (!messages.length || messages[0].role !== 'user' || messages[messages.length - 1].role !== 'user') return send(res, 400, { code: 'invalid', message: 'Messages must start and end with a user message.' });
-  messages = messages.map(m => ({ role: m.role, content: m.content }));
   const images = (Array.isArray(body.images) ? body.images : [])
     .filter(i => i && /^image\/(jpeg|png|webp|gif)$/.test(i.media_type) && typeof i.data === 'string' && i.data.length)
     .slice(0, 8);
-  if (images.length) {
-    const last = messages[messages.length - 1];
-    last.content = [
-      ...images.map(i => ({ type: 'image', source: { type: 'base64', media_type: i.media_type, data: i.data } })),
-      { type: 'text', text: last.content },
-    ];
-  }
 
-  // Stop the upstream request if the browser goes away, so no tokens are wasted.
+  // Stop the upstream request if the browser goes away, so no quota or credits are wasted.
   const ctrl = new AbortController();
   res.on('close', () => { if (!res.writableFinished) ctrl.abort(); });
 
-  const payload = { model: MODELS[tier], max_tokens: MAX_TOKENS[tier], stream: true, output_config: { effort: EFFORT[tier] }, messages };
-  const headers = { 'content-type': 'application/json', 'x-api-key': KEY, 'anthropic-version': '2023-06-01' };
-  if (USE_FALLBACK[tier] && process.env.DISABLE_FALLBACK !== '1') { payload.fallbacks = 'default'; headers['anthropic-beta'] = FALLBACK_BETA; }
-
+  const call = PROVIDER_ID === 'gemini' ? geminiRequest(tier, messages, images) : anthropicRequest(tier, messages, images);
   let upstream;
   try {
-    upstream = await fetch((process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com') + '/v1/messages', {
-      method: 'POST', headers, body: JSON.stringify(payload), signal: ctrl.signal,
-    });
+    upstream = await fetch(call.url, { method: 'POST', headers: call.headers, body: JSON.stringify(call.body), signal: ctrl.signal });
   } catch (err) {
     if (ctrl.signal.aborted) return;
     return send(res, 502, { code: 'network', message: 'Could not reach the AI service. Check your internet connection.' });
   }
   if (!upstream.ok) {
-    let msg = 'AI request failed (' + upstream.status + ').';
-    try { const j = await upstream.json(); msg = j.error?.message || msg; } catch {}
-    const code = upstream.status === 429 ? 'rate_limited' : upstream.status === 401 ? 'bad_key' : upstream.status === 529 ? 'overloaded' : 'upstream';
-    if (code === 'bad_key') msg = 'The API key in .env was rejected. Check it and restart the server.';
-    return send(res, upstream.status === 429 || upstream.status === 529 ? 429 : 502, { code, message: msg });
+    let j = null; try { j = await upstream.json(); } catch {}
+    const e = (PROVIDER_ID === 'gemini' ? geminiError : anthropicError)(upstream.status, j);
+    return send(res, e.code === 'rate_limited' || e.code === 'overloaded' || e.code === 'quota_day' ? 429 : 502, e);
   }
 
-  // Re-stream only the text as plain chunks, plus a marker if the reply was cut short.
+  // Re-stream only the answer text, plus a marker line if the reply was cut short.
   res.writeHead(200, { ...BASE_HEADERS, 'Content-Type': 'text/plain; charset=utf-8' });
+  const onEvent = PROVIDER_ID === 'gemini' ? geminiEvent : anthropicEvent;
+  const state = { marked: false };
+  const write = t => { if (t) res.write(t); };
+  const mark = (m, detail) => { if (!state.marked) { state.marked = true; res.write(m + (detail ? ' ' + String(detail).replace(/\s+/g, ' ') : '')); } };
   const reader = upstream.body.getReader(); const dec = new TextDecoder(); let buf = '';
   const handle = line => {
     line = line.trim();
     if (!line.startsWith('data:')) return;
     let ev; try { ev = JSON.parse(line.slice(5)); } catch { return; }
-    if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') res.write(ev.delta.text);
-    else if (ev.type === 'message_delta' && ev.delta?.stop_reason === 'max_tokens') res.write(MARK.cut);
-    else if (ev.type === 'message_delta' && ev.delta?.stop_reason === 'refusal') res.write(MARK.refusal);
-    else if (ev.type === 'error') res.write(MARK.error + ' ' + String(ev.error?.message || 'unknown').replace(/\s+/g, ' '));
+    onEvent(ev, write, mark);
   };
   try {
     for (;;) {
@@ -175,9 +197,75 @@ async function handleAI(req, res) {
     }
     if (buf) handle(buf);
   } catch (err) {
-    if (!ctrl.signal.aborted) res.write(MARK.error + ' The connection to the AI service dropped.');
+    if (!ctrl.signal.aborted) mark(MARK.error, 'The connection to the AI service dropped.');
   }
   res.end();
+}
+
+// ----- Google Gemini (generateContent REST API, streamed as server-sent events) -----
+function geminiRequest(tier, messages, images) {
+  const contents = messages.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
+  if (images.length) contents[contents.length - 1].parts.unshift(...images.map(i => ({ inline_data: { mime_type: i.media_type, data: i.data } })));
+  const base = env('GEMINI_BASE_URL') || 'https://generativelanguage.googleapis.com';
+  return {
+    url: `${base}/v1beta/models/${encodeURIComponent(MODELS[tier])}:streamGenerateContent?alt=sse`,
+    headers: { 'content-type': 'application/json', 'x-goog-api-key': AI.key },
+    body: { contents, generationConfig: { maxOutputTokens: AI.maxTokens[tier] } },
+  };
+}
+const GEMINI_STOP_REFUSED = new Set(['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'IMAGE_SAFETY', 'LANGUAGE']);
+function geminiEvent(ev, write, mark) {
+  if (ev.error) return mark(MARK.error, ev.error.message || 'unknown');
+  if (ev.promptFeedback?.blockReason) return mark(MARK.refusal);
+  const c = ev.candidates?.[0];
+  if (!c) return;
+  for (const p of c.content?.parts || []) if (typeof p.text === 'string' && !p.thought) write(p.text);
+  if (c.finishReason === 'MAX_TOKENS') mark(MARK.cut);
+  else if (GEMINI_STOP_REFUSED.has(c.finishReason)) mark(MARK.refusal);
+}
+function geminiError(status, j) {
+  const err = j?.error || {};
+  const details = Array.isArray(err.details) ? err.details : [];
+  const reason = details.find(d => d.reason)?.reason || '';
+  const msg = err.message || `AI request failed (${status}).`;
+  if (reason === 'API_KEY_INVALID' || /api key not valid/i.test(msg) || status === 401) return { code: 'bad_key', message: 'Google rejected the Gemini API key. Check GEMINI_API_KEY in the .env file and restart the server.' };
+  if (status === 403) return { code: 'bad_key', message: 'Google refused this request (' + msg + '). Check that the Gemini API key is correct and that the Gemini API is allowed for it.' };
+  if (status === 404) return { code: 'bad_model', message: 'Google does not offer this model any more (' + msg + '). Set GEMINI_MODEL_DEFAULT (and _QUICK, _COMPLEX) in .env to a current model.' };
+  if (status === 429) {
+    const perDay = details.some(d => (d.violations || []).some(v => /PerDay/i.test(v.quotaId || '')));
+    if (perDay) return { code: 'quota_day', message: 'You have used today\'s free Gemini limit for this model. It resets tomorrow (Pacific time).' };
+    const delay = details.find(d => d.retryDelay)?.retryDelay;
+    const secs = delay ? Math.ceil(parseFloat(delay)) : 20;
+    return { code: 'rate_limited', retryAfter: Math.min(Math.max(secs, 1), 90), message: 'The free Gemini limit was reached for this minute. Retrying shortly…' };
+  }
+  if (status === 503 || status === 500) return { code: 'overloaded', retryAfter: 10, message: 'Gemini is busy right now. Try again in a moment.' };
+  return { code: 'upstream', message: msg };
+}
+
+// ----- Anthropic Claude (Messages API, streamed) -----
+function anthropicRequest(tier, messages, images) {
+  messages = messages.map(m => ({ ...m }));
+  if (images.length) {
+    const last = messages[messages.length - 1];
+    last.content = [...images.map(i => ({ type: 'image', source: { type: 'base64', media_type: i.media_type, data: i.data } })), { type: 'text', text: last.content }];
+  }
+  const body = { model: MODELS[tier], max_tokens: AI.maxTokens[tier], stream: true, output_config: { effort: AI.effort[tier] }, messages };
+  const headers = { 'content-type': 'application/json', 'x-api-key': AI.key, 'anthropic-version': '2023-06-01' };
+  if (USE_FALLBACK[tier] && env('DISABLE_FALLBACK') !== '1') { body.fallbacks = 'default'; headers['anthropic-beta'] = FALLBACK_BETA; }
+  return { url: (env('ANTHROPIC_BASE_URL') || 'https://api.anthropic.com') + '/v1/messages', headers, body };
+}
+function anthropicEvent(ev, write, mark) {
+  if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') write(ev.delta.text);
+  else if (ev.type === 'message_delta' && ev.delta?.stop_reason === 'max_tokens') mark(MARK.cut);
+  else if (ev.type === 'message_delta' && ev.delta?.stop_reason === 'refusal') mark(MARK.refusal);
+  else if (ev.type === 'error') mark(MARK.error, ev.error?.message || 'unknown');
+}
+function anthropicError(status, j) {
+  const msg = j?.error?.message || `AI request failed (${status}).`;
+  if (status === 401) return { code: 'bad_key', message: 'The Anthropic API key was rejected. Check it in .env and restart the server.' };
+  if (status === 429) return { code: 'rate_limited', retryAfter: 10, message: msg };
+  if (status === 529) return { code: 'overloaded', retryAfter: 10, message: msg };
+  return { code: 'upstream', message: msg };
 }
 
 // ---------- routes ----------
@@ -187,7 +275,7 @@ const server = http.createServer(async (req, res) => {
     const p = url.pathname;
     const block = allowed(req);
     if (block) return send(res, 403, { message: block });
-    if (p === '/api/health') return send(res, 200, { ai: !!KEY, models: MODELS });
+    if (p === '/api/health') return send(res, 200, { ai: !!AI.key, provider: PROVIDER_ID, providerName: AI.name, models: MODELS, concurrency: AI.concurrency });
     if (p === '/api/state' && req.method === 'GET') return send(res, 200, { docs: Object.values(db) });
     const m = p.match(/^\/api\/doc\/([^/]+)$/);
     if (m) {
@@ -221,7 +309,7 @@ if (require.main === module) {
   server.listen(PORT, HOST, () => {
     console.log(`Study Hub running at http://${LOCAL_ONLY || HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
     if (!LOCAL_ONLY) console.log('Warning: HOST is not localhost. Anyone who can reach this machine can read your data and use your API key. There is no login.');
-    if (!KEY) console.log('Note: no ANTHROPIC_API_KEY set. AI features are off until you add it to .env');
+    console.log(AI.key ? `AI: ${AI.name} (${MODELS.default})` : 'AI is off: get a free key at https://aistudio.google.com/apikey and add GEMINI_API_KEY=... to .env, then restart.');
   });
 }
 module.exports = { server };

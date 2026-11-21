@@ -297,22 +297,25 @@ async function initStore(){
 }
 function logActivity(){const t=todayISO();const a=S.meta.activity||(S.meta.activity=[]);if(!a.includes(t)){a.push(t);if(a.length>120)a.shift();saveMeta()}}
 
-/* ---------- AI: the local server forwards to the Anthropic API ---------- */
+/* ---------- AI: the local server forwards to Google Gemini (default) or Anthropic Claude ---------- */
 let SAMPLE;
-async function getAI(){if(SAMPLE!==undefined)return SAMPLE;try{const r=await timeout(fetch('/api/health'),8000);const j=await r.json();SAMPLE=j.ai?true:null}catch(e){SAMPLE=null}return SAMPLE}
+let AIINFO={};
+async function getAI(){if(SAMPLE!==undefined)return SAMPLE;try{const r=await timeout(fetch('/api/health'),8000);AIINFO=await r.json();SAMPLE=AIINFO.ai?true:null}catch(e){SAMPLE=null}return SAMPLE}
 async function imgOK(){return true}
 function parseJSON(t){t=String(t||'').trim().replace(/^```(?:json)?\s*/i,'').replace(/```\s*$/,'');try{return JSON.parse(t)}catch(e){}const a=t.indexOf('{'),b=t.lastIndexOf('}');if(a>=0&&b>a){try{return JSON.parse(t.slice(a,b+1))}catch(e){}}throw{code:'bad_json',message:'The AI reply could not be read. Please try again.'}}
 const toB64=b=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(b)});
 // At most 4 AI requests run at once (long files and several uploads run in parallel),
 // and a request that fails before any text arrived is retried when the API was busy.
-const AI_SLOTS=4;let aiActive=0;const aiQueue=[];
-async function withSlot(fn){if(aiActive>=AI_SLOTS)await new Promise(r=>aiQueue.push(r));aiActive++;try{return await fn()}finally{aiActive--;aiQueue.shift()?.()}}
+// The server says how many requests its AI allows at once (2 on Gemini's free tier).
+let aiActive=0;const aiQueue=[];const aiSlots=()=>Math.max(1,Math.min(6,+AIINFO.concurrency||2));
+async function withSlot(fn){if(aiActive>=aiSlots())await new Promise(r=>aiQueue.push(r));aiActive++;try{return await fn()}finally{aiActive--;aiQueue.shift()?.()}}
 const RETRY=new Set(['rate_limited','overloaded','network']);
 async function askText(input,onText,opts={}){
   for(let attempt=0;;attempt++){
     let got=false;
     try{return await withSlot(()=>askOnce(input,t=>{got=true;onText&&onText(t)},opts))}
-    catch(e){if(got||attempt>=2||!RETRY.has(e?.code))throw e;await new Promise(r=>setTimeout(r,attempt?8000:3000))}
+    // Wait as long as the AI service asks (free tiers have per-minute limits), up to 3 times.
+    catch(e){if(got||attempt>=3||!RETRY.has(e?.code))throw e;opts.onWait&&opts.onWait(e);await new Promise(r=>setTimeout(r,(e.retryAfter?e.retryAfter*1000:(attempt?8000:3000))+Math.random()*1000))}
   }
 }
 async function askOnce(input,onText,opts){
@@ -320,7 +323,7 @@ async function askOnce(input,onText,opts){
   const messages=typeof input==='string'?[{role:'user',content:input}]:input;
   const images=opts.images?await Promise.all(opts.images.map(async b=>({media_type:b.type||'image/jpeg',data:await toB64(b)}))):[];
   let r;try{r=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages,images,tier:opts.modelTier||'default'})})}catch(e){throw{code:'network',message:'Could not reach the Study Hub server. Is it still running (npm start)?'}}
-  if(!r.ok){let j={};try{j=await r.json()}catch(e){}throw{code:j.code,message:j.message||('AI request failed ('+r.status+')')}}
+  if(!r.ok){let j={};try{j=await r.json()}catch(e){}throw{code:j.code,retryAfter:j.retryAfter,message:j.message||('AI request failed ('+r.status+')')}}
   const rd=r.body.getReader(),dec=new TextDecoder();let raw='';
   try{for(;;){const {value,done}=await rd.read();if(done)break;raw+=dec.decode(value,{stream:true});onText&&onText(cleanAI(raw).text)}}
   catch(e){throw{code:'network',message:'The connection dropped while the AI was answering. Try again.'}}
@@ -333,7 +336,7 @@ async function askOnce(input,onText,opts){
 // The server adds a marker line when a reply was cut short; split it off the text.
 function cleanAI(raw){const m=raw.match(/\n\[\[studyhub:(cut_off|refusal|error)\]\]([^\n]*)/);return m?{text:raw.slice(0,m.index),flag:m[1],detail:m[2].trim()}:{text:raw,flag:null}}
 async function askJSON(prompt,opts={}){const t=await askText(prompt+'\n\nReply with ONLY valid JSON. No prose, no code fences.',null,{...opts,strict:true});return parseJSON(t)}
-function aiErr(e){const c=e?.code;if(c==='no_ai'||c==='no_key')return'AI is off: add your ANTHROPIC_API_KEY to the .env file and restart the server.';if(c==='rate_limited')return'The AI is busy right now. Wait a minute and try again.';return e?.message||String(e||'Something went wrong. Try again.')}
+function aiErr(e){const c=e?.code;if(c==='no_ai'||c==='no_key')return'AI is off: get a free key at aistudio.google.com/apikey, put GEMINI_API_KEY=your-key in the .env file, and restart the server.';if(c==='rate_limited')return'The free AI limit for this minute was reached. Wait a minute and try again.';if(c==='quota_day')return e.message||'Today\'s free AI limit is used up. It resets tomorrow.';return e?.message||String(e||'Something went wrong. Try again.')}
 
 /* ---------- file reading ---------- */
 const CDN='https://cdn.jsdelivr.net/npm/';const loaded={};
@@ -520,7 +523,7 @@ function render(){
   const r=route();
   $('#side').innerHTML=sideHTML(r);
   const m=$('#main');
-  m.innerHTML=(SAMPLE===null?`<div class="banner"><b>AI is off.</b><span class="small">Add your ANTHROPIC_API_KEY to the .env file and restart the server (npm start). Your progress still saves.</span></div>`:'')+(r.v==='course'?courseHTML(course(r.id)):r.v==='plan'?planHTML():dashHTML());
+  m.innerHTML=(SAMPLE===null?`<div class="banner"><b>AI is off.</b><span class="small">Get a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>, add <code>GEMINI_API_KEY=your-key</code> to the .env file and restart the server (npm start). Your progress still saves.</span></div>`:'')+(r.v==='course'?courseHTML(course(r.id)):r.v==='plan'?planHTML():dashHTML());
   if(aid){const el=document.getElementById(aid);if(el){el.focus();if(sel&&el.setSelectionRange)try{el.setSelectionRange(...sel)}catch(e){}}}
   typeset(m);
 }

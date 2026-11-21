@@ -10,12 +10,20 @@ An AI study companion for your college courses.
 
 ## Run it
 
-You need [Node.js](https://nodejs.org/) 18 or newer and an [Anthropic API key](https://console.anthropic.com/).
+You need [Node.js](https://nodejs.org/) 18 or newer and a **free** Google Gemini API key:
+
+1. Go to https://aistudio.google.com/apikey and sign in with a Google account.
+2. Click **Create API key** and copy it. No credit card is needed.
+3. Put it in `.env` as `GEMINI_API_KEY=your-key` (see below).
+
+The free tier has limits (a few requests per minute and a daily cap per model), so Study Hub sends at most two AI requests at a time and waits and retries when Google asks it to. If the daily cap is used up, AI features pause until it resets the next day. On the free tier, Google may use what you send to improve its products, so don't upload anything private.
+
+Prefer Claude? Set `ANTHROPIC_API_KEY` instead (paid). See `.env.example`.
 
 ```bash
 git clone https://github.com/aaaah969/study-hub.git
 cd study-hub
-cp .env.example .env      # then paste your key into .env
+cp .env.example .env      # then paste your free Gemini key into .env
 npm start
 ```
 
